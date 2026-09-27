@@ -203,6 +203,15 @@ cython_debug/
 # Temporary file for partial code execution
 tempCodeRunnerFile.py
 
+# 一次性探测 / 实验脚本。
+#   不属于项目代码：用来核实文档论断、跑临时对照，用完即弃。
+#   教训（docs/12 §6 债务 11）：这类文件曾被 git add -A 收进提交并推送，
+#   因已推送而只能补一个删除提交，历史里留了痕。
+#   正确做法是写到仓库外；这几条模式只是兜底。
+probe*.py
+*_tmp.py
+scratch*.py
+
 # Ruff stuff:
 .ruff_cache/
 
