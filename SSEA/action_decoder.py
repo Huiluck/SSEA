@@ -37,9 +37,45 @@ docs/08-dual-loop-interface-and-gap-closure.md §2.6.2。
 「提案 → 验证门 → Structure Store → 换快照」——于是门控的每一次变动都是
 可审计的一次版本切换，而不是一次无人知晓的原地赋值。
 
-在此之前 ``FastLoopContext.get_threshold()`` 是个**没有消费者的声明**：
-它写着"Action Decoder 的决策阈值来源"，而 Action Decoder 读的是自己的
-config。本模块补上这个消费者（Milestone 4 增量 3）。
+在此之前 ``thresholds`` 是个**没有消费者的类别**：改结构里的阈值对行为没有
+任何影响，而提案、Gate、Store 一路都是绿的。本模块补上这个消费者
+（Milestone 4 增量 3）。
+
+> **注意补上的是类别，不是访问器。** 这里曾写成「``FastLoopContext.
+> get_threshold()`` 是个没有消费者的声明……本模块补上这个消费者」，
+> 2026-09-28 更正：本模块读的是 ``gate_thresholds`` **整个映射**（解码器要按
+> 多个键取值，单键访问器不是它需要的形状），一次都没调用过那个方法。
+> 那个方法已于 2026-09-28 删除——它的 ``default=0.0`` 与本模块的回落
+> （``config.gate_threshold``）对不上，契约是猜的。**类别活着不等于名字
+> 对应的接口活着**，见 14 §6.3.6 与 `tests/test_consumer_surface.py`
+> 的 `DELETED_ACCESSORS`。
+
+本能也住在结构里
+----------------
+同一个道理用在 ``FastLoopContext.adapters`` 上：``forward`` 的
+``loco_instinct`` / ``manip_instinct`` 参数是从 ``adapters`` 里的 blob
+解码出来的本能先验（见 ``forward`` 的 docstring 与 ``SSEA/instinct.py``）。
+于是行为先验走的是完整的遗传路径——可保存、可变异、过验证门、进
+GenePackage——而不是被塞进一个手工调好的权重初始化里。
+
+在它之前，``adapters`` 是五类结构里**唯一连读取接口都没有**的一类：
+提案能写、门会校验、Store 会升版本、审计会记一笔，只是没人读过。
+
+**两个作用点，都不是「替换」。** 本能一律**加**在某个已经算出来的量上：
+
+| 参数 | 加在哪 | 形状 |
+|---|---|---|
+| ``loco_instinct`` | ``loco_dir(h)`` 的输出，**tanh 之前** | ``(direction_dim,)`` |
+| ``manip_instinct`` | 操纵门 logit 与 ``grasp`` op logit，**sigmoid / argmax 之前** | ``(MANIPULATION_ROWS,)`` |
+
+加法而非替换，是为了让被推的那个头**留在计算图里**。替换会让
+``loco_dir`` / ``gates["manipulation"]`` / ``manip_op`` 从图上掉出去，
+于是 SSEA 少几个学习作用点——而那不会在任何运行时报错里显现。
+``TestTrainability`` 与 ``test_instinct.py::TestInstinctActuallySteers``
+各守一边。
+
+推 **logit** 而不是概率：推概率要先过 sigmoid，而 sigmoid 的饱和区会把
+一份强先验压成毫无差别的一坨——“加了偏置但什么也没发生”，且不报错。
 
 为什么本模块的输出不可微
 --------------------
@@ -69,6 +105,7 @@ from typing import Mapping
 import torch
 import torch.nn as nn
 
+from .instinct import MANIP_GRASP_ROW, MANIP_GATE_ROW, MANIPULATION_ROWS
 from .sse_protocols import (
     OPERATIONS,
     Action,
@@ -82,6 +119,15 @@ from .sse_protocols import (
     idle_action,
 )
 from .tensorize import as_vector
+
+#: ``grasp`` 在 ``OPERATIONS`` 里的下标——manipulation 本能推的那个 logit。
+#:
+#: 模块级求值，取不到就在 import 时炸掉。写成函数里 ``try/except`` 会更"稳"，
+#: 但那个稳是假的：闭词表被改了却不炸，结果就是**本能偏置悄悄推到一个
+#: 错误的下标上**（甚至越界被 argmax 忽略），而现象只是"本能没效果"。
+#: 闭词表由协议层守着（``test_protocol_consistency``），这里该做的是
+#: 在它被破坏的那一刻就喊出来。
+_GRASP_INDEX = OPERATIONS.index("grasp")
 
 #: 参与门控的通道（locomotion 常开，不参与）。
 GATED_CHANNELS = ("manipulation", "communication", "memory", "skill", "self_modification")
@@ -120,6 +166,19 @@ class ActionDecoderConfig:
     gate_threshold: float = DEFAULT_GATE_THRESHOLD
 
 
+#: 候选对象的特征维度：``(resource_value, threat_level, distance)``。
+#:
+#: 这三个字段是**环境自己标注的生存后果**，不是模型解释出来的语义：
+#: ``resource_value`` 是这一抓能换多少能量，``threat_level`` 是接触的伤害率，
+#: ``distance`` 够不够得着（``reach``）。判据刻意不看 ``category_id``——
+#: 它的语义由 ``object_vector.py`` 明令「不由模型解释」。
+#:
+#: 它们同时是**目标打分的输入**：``manip_target`` 头从「常量分」改成
+#: 「对这一组特征打分」之后，同一个头对不同候选才会给出不同的分，
+#: ``argmax`` 才不会恒返回 0（债务 5）。
+OBJECT_FEATURE_DIM = 3
+
+
 @dataclass(frozen=True)
 class DecodeCandidates:
     """解码时可选的离散目标。
@@ -132,11 +191,37 @@ class DecodeCandidates:
     #: 视野内对象 id，按距离升序。
     object_ids: tuple[str, ...] = ()
 
+    #: 与 ``object_ids`` **逐项对应**的对象特征，每项 ``OBJECT_FEATURE_DIM`` 维。
+    #:
+    #: 为什么必须有它：``manip_target`` 头原先只吃 ``h``，对每个候选算出的分
+    #: **完全相同**（``expand`` 出来的等值张量），于是 ``argmax`` 恒为 0——
+    #: 头本身有参数、有梯度、在 `nn.ModuleList` 里，**输出却被整个丢掉**。
+    #: 打分要能区分候选，就必须有候选侧的特征进来。
+    #:
+    #: 允许留空（老调用点）：空时按全零特征处理，各候选得分相同，
+    #: 行为退回「恒选第一个」——那是**退化情形**，不是另一条实现路径。
+    object_features: tuple[tuple[float, ...], ...] = ()
+
     #: 当前可调用的技能 id。
     skill_ids: tuple[str, ...] = ()
 
     #: 可提案的自我修改类型。
     proposal_types: tuple[str, ...] = ()
+
+    def __post_init__(self) -> None:
+        if not self.object_features:
+            return
+        if len(self.object_features) != len(self.object_ids):
+            raise ValueError(
+                f"object_features 与 object_ids 必须逐项对应: "
+                f"{len(self.object_features)} != {len(self.object_ids)}"
+            )
+        for i, feats in enumerate(self.object_features):
+            if len(feats) != OBJECT_FEATURE_DIM:
+                raise ValueError(
+                    f"第 {i} 个候选的特征是 {len(feats)} 维，"
+                    f"应为 {OBJECT_FEATURE_DIM} 维（见 OBJECT_FEATURE_DIM）"
+                )
 
 
 class ActionDecoder(nn.Module):
@@ -165,7 +250,11 @@ class ActionDecoder(nn.Module):
 
         # manipulation
         self.manip_op = nn.Linear(64, len(OPERATIONS))
-        self.manip_target = nn.Linear(64, 1)  # 对候选打分用
+        # 目标打分是**双线性**的：``score_i = <manip_target(h), feature_i>``。
+        # 头从 h 产出 OBJECT_FEATURE_DIM 维的「我方权重」，与候选侧的
+        # (resource_value, threat_level, distance) 点积。于是同一帧的不同候选
+        # 得分不同，argmax 才有意义——原先输出是 (1,) 再 expand，分值全等。
+        self.manip_target = nn.Linear(64, OBJECT_FEATURE_DIM)
         self.manip_force = nn.Linear(64, 1)
         self.manip_dur = nn.Linear(64, 1)
 
@@ -197,6 +286,8 @@ class ActionDecoder(nn.Module):
         internal_drive: torch.Tensor,
         candidates: DecodeCandidates | None = None,
         gate_thresholds: Mapping[str, float] | None = None,
+        loco_instinct: torch.Tensor | None = None,
+        manip_instinct: torch.Tensor | None = None,
     ) -> Action:
         """解码出一个满足约束的 Action。
 
@@ -210,6 +301,31 @@ class ActionDecoder(nn.Module):
         「提案 → 验证门 → Structure Store → 换快照」整条路，而不必让慢环
         直接写 torch 参数（07 §16：模型不可绕过验证器应用修改）。
         默认 None = 用 ``config.gate_threshold``，老调用点一行不用改。
+
+        两个本能参数都是**已经投影好的偏置**，不是原始权重矩阵：
+
+        - ``loco_instinct``：形状 ``(direction_dim,)``
+        - ``manip_instinct``：形状 ``(MANIPULATION_ROWS,)``——第
+          ``MANIP_GATE_ROW`` 项推操纵门，第 ``MANIP_GRASP_ROW`` 项推 ``grasp``
+
+        投影（``W @ f``）在 ``SSEA/instinct.py`` 里做，因为那一步要读观测，
+        而本模块刻意不收 Observation（见上：收一个只为取字段的参数会让签名说谎）。
+        没有可施加的本能时两者都是 ``None``，各自**加**在对应的量上：
+
+            direction      = tanh(loco_dir(h) + loco_bias)
+            manip gate     = sigmoid(gates["manipulation"](h) + manip_bias[0])
+            manip op       = argmax(manip_op(h) + manip_bias[1] @ grasp 那一项)
+
+        加法是刻意的，有两个后果都是要的：
+
+        1. **被推的头仍然可微、仍然可学。** 替换成 ``tanh(W @ f)`` 会让
+           ``loco_dir`` 从计算图里掉出去，于是 SSEA 少一个学习作用点——
+           而那不会在任何运行时报错里显现。``TestTrainability`` 守着这条。
+        2. **``None`` 时与改动前逐位相同。** 不是"近似相同"：没有本能项
+           就是没有那一项。对照组不是"另一个实现"，是同一段代码的本能项为 0。
+
+        门与 op 的偏置都推在 **logit** 上（sigmoid / argmax 之前）：
+        推概率要先过 sigmoid，而饱和区会把一份强先验压成毫无差别的一坨。
         """
 
         cfg = self.config
@@ -226,7 +342,12 @@ class ActionDecoder(nn.Module):
         )
 
         # ---- locomotion（常开）----
-        direction = torch.tanh(self.loco_dir(h)).tolist()
+        # 本能偏置：快照里没有可用 adapter 时 loco_instinct 为 None，
+        # 这一行退回改动前的表达式（不是乘 0，是根本没有这一项）。
+        loco_logits = self.loco_dir(h)
+        if loco_instinct is not None:
+            loco_logits = loco_logits + loco_instinct
+        direction = torch.tanh(loco_logits).tolist()
         speed = float(torch.sigmoid(self.loco_speed(h))) * constraints.max_speed #UserWarning，张量转标量
         duration = float(torch.sigmoid(self.loco_dur(h))) * constraints.max_duration
         locomotion = Locomotion(
@@ -236,9 +357,17 @@ class ActionDecoder(nn.Module):
         action = Action(locomotion=locomotion)
 
         # ---- 门控通道 ----
+        # 先算 logit 再 sigmoid，中间夹一层本能偏置。**顺序不能反**：
+        # sigmoid 之后再加就不是"推 logit"了——那是推概率，而推概率在
+        # 饱和区几乎没有效果，现象是"本能装上了但门还是不开"。
+        gate_logits = {name: layer(h) for name, layer in self.gates.items()}
+        if manip_instinct is not None:
+            # 形状 (1,) + 0 维标量 → 广播回 (1,)，与不装本能时同一形状。
+            gate_logits["manipulation"] = (
+                gate_logits["manipulation"] + manip_instinct[MANIP_GATE_ROW]
+            )
         gate_values = {
-            name: float(torch.sigmoid(layer(h)))
-            for name, layer in self.gates.items()
+            name: float(torch.sigmoid(logit)) for name, logit in gate_logits.items()
         }
 
         def threshold_for(channel: str) -> float:
@@ -254,7 +383,9 @@ class ActionDecoder(nn.Module):
             gate_values["manipulation"] >= threshold_for("manipulation")
             and candidates.object_ids
         ):
-            action = self._add_manipulation(action, h, constraints, candidates)
+            action = self._add_manipulation(
+                action, h, constraints, candidates, manip_instinct
+            )
 
         # communication
         if (
@@ -320,18 +451,59 @@ class ActionDecoder(nn.Module):
         h: torch.Tensor,
         constraints: ActionConstraints,
         candidates: DecodeCandidates,
+        manip_instinct: torch.Tensor | None = None,
     ) -> Action:
-        """从候选对象中选目标，并按约束裁剪操作与力。"""
+        """从候选对象中选目标，并按约束裁剪操作与力。
 
-        # 目标选择：用 manip_target 对每个候选打分。候选本身不带可学特征，
-        # 故按索引顺序打分——第一阶段只验证"离散选择走候选集合"这条机制。
-        # 目标语义注意力留到 Milestone 4：它要的是"哪个对象与当前记忆相关"，
-        # 而记忆系统在 Milestone 3 才落地——在它之前做注意力，打分依据只能是
-        # 一个还不存在的输入。
-        scores = self.manip_target(h).expand(len(candidates.object_ids))
+        目标打分**逐候选**做（债务 5 的修正）：``manip_target(h)`` 产出的是
+        「我方对各特征的偏好权重」（``OBJECT_FEATURE_DIM`` 维），与每个候选自己的
+        ``(resource_value, threat_level, distance)`` 点积得到该候选的分。
+
+        修正前是 ``self.manip_target(h).expand(n)``——一个等值张量，
+        ``argmax`` 恒返回 0，于是**永远选「最近的可见对象」，不看它是什么**。
+        头本身有参数、有梯度、挂在 ``nn.Module`` 上，**输出却被整个丢掉**：
+        这类"参数在、梯度在、效果不在"的缺陷不会报错，只会让目标选择
+        退化成「按距离取第一个」。
+
+        候选不带特征时（``object_features`` 为空）各候选得分相同，
+        行为退回「取第一个」——那是**退化情形**，不是另一条实现路径。
+        """
+
+        features = candidates.object_features
+        if features:
+            weights = self.manip_target(h)
+            # 用张量乘法而不是把 weights 取成 Python 浮点再点积。注意这**不是**
+            # 为了"保住梯度"：argmax 不可微、且分值算完即被丢掉（只留一个下标），
+            # 所以 manip_target 本来就不在从 Action 出发的任何梯度路径上——
+            # 与"本模块输出不可微"同一个理由（见模块 docstring）。
+            # 用张量写法只因它少一层 Python 循环、且让这个头保持成一个
+            # 普通的 nn.Module（参数进 state_dict，日后可被结构侧 Δθ 改）。
+            feature_matrix = torch.tensor(features, dtype=weights.dtype)
+            scores = feature_matrix @ weights
+        else:
+            scores = torch.zeros(len(candidates.object_ids))
         target_idx = int(torch.argmax(scores))
 
         op_logits = self.manip_op(h)
+        if manip_instinct is not None:
+            # 只在 grasp 那一格上加，其余格是 0——用一张零张量散射而不是
+            # 就地改 op_logits：就地改会让这个头在反向时多一条没人想要的
+            # 版本计数路径，而这里的输出本来就不参与梯度（argmax 不可微）。
+            grasp_bias = torch.zeros_like(op_logits)
+            grasp_bias[_GRASP_INDEX] = manip_instinct[MANIP_GRASP_ROW]
+            op_logits = op_logits + grasp_bias
+        # 推偏置在前、按约束屏蔽在后：**屏蔽恒为最后一步**，"抓不到的东西
+        # 别去抓"这条边界不该被一份先验顶掉（先验是行为，约束是边界）。
+        #
+        # 但要诚实说清这个顺序**兜住了什么**：偏置有限时，两种顺序其实等价
+        # ——``-inf + 有限数 = -inf``，屏蔽照样成立。它真正不同的是偏置为
+        # ``inf`` 时：``-inf + inf = nan``，而 ``nan`` 在比较里胜过 ``-inf``，
+        # 于是 ``argmax`` 可能落在一个本该被屏蔽的 op 上。
+        #
+        # 那一格已经由 ``instinct.decode_instinct`` 从源头堵死了（含 inf / nan
+        # 的 blob 一律按"读不懂"拒绝，门也跟着拒）。所以这里是**第二道防线**，
+        # 不是唯一那道——写成"这个顺序关掉了复活"会是假话，而假话会让后来者
+        # 以为解码侧不需要那道检查。
         allowed = [
             i for i, op in enumerate(OPERATIONS) if op in constraints.allowed_operations
         ]

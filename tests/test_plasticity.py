@@ -795,9 +795,13 @@ class TestThresholdIsObservable:
     def test_lowering_the_threshold_opens_the_gate(self) -> None:
         """同一个 hidden、同一个门控值：阈值从 0.5 降到刚好低于门控值，门从闭到开。
 
-        这是 ``FastLoopContext.get_threshold`` 那个"没有消费者的声明"的回归
-        钉子：在 ActionDecoder 接上 ``gate_thresholds`` 之前，改结构里的
-        阈值对行为**没有任何影响**，而提案、Gate、Store 一路都是绿的。
+        这是 ``thresholds`` 那个**没有消费者的类别**的回归钉子：在
+        ActionDecoder 接上 ``gate_thresholds`` 之前，改结构里的阈值对行为
+        **没有任何影响**，而提案、Gate、Store 一路都是绿的。
+
+        历史注：这个洞当年被记成「``get_threshold()`` 没有消费者」，两处
+        差一层——补上的消费者读的是**整个映射**，那个访问器一次都没被调用过，
+        已于 2026-09-28 删除。**类别活着不等于名字对应的接口活着。**
         """
 
         from SSEA.action_decoder import ActionDecoder, DecodeCandidates

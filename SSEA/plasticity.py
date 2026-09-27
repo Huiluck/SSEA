@@ -38,9 +38,15 @@
 
 所以本模块把参数侧整个声明为未实现（``DEFERRED_SCOPES``），
 由 ``tests/test_plasticity.py::TestDeferredScopes`` 守着。真正的落地顺序是：
-先让 ``adapters`` 有模型侧消费者（现在它是个写得进、过得门、传得下、
-**却没有消费者**的类别），再让 Gate 的第四级能装上候选权重，
+先让 ``adapters`` 有模型侧消费者，再让 Gate 的第四级能装上候选权重，
 然后才谈参数侧 Δθ。三步都是可见的工程，不是"以后再说"。
+
+> **第 1 步已完成（2026-09-27）**，消费者是 ``instinct.py`` + ``ActionDecoder``
+> 的两个本能参数。**但要说清它没改变什么**：本能是**整份替换的 bytes**
+> （解出来是一张小权重矩阵），不是可微参数的增量——于是上面第 2 条
+> （"第四级装的是全新模型，权重增量递进去它看不见"）**一个字都没有松动**。
+> 参数侧 Δθ 仍然卡在第 2 步，``DEFERRED_SCOPES`` 里 ``adapters`` 这一项
+> 因此保持在场，只是理由换了。
 
 Δθ 的判据是世界，不是偏好
 ----------------------
@@ -111,8 +117,12 @@ IMPLEMENTED_SCOPES: tuple[str, ...] = ("thresholds", "retrieval")
 DEFERRED_SCOPES: Mapping[str, str] = {
     "adapters": (
         "结构类别已通（Gate 的 _check_adapters + Store 的 UPDATE_ADAPTER），"
-        "但 adapters 没有模型侧消费者——写得进、过得门、传得下，却没人读。"
-        "先补消费者，再让 Gate 第四级能装候选权重"
+        "模型侧消费者也已补上（instinct.py + ActionDecoder 的两个本能参数，"
+        "2026-09-27）——本条**不再是**「没人读」那笔账。"
+        "仍未做的是一开始记的那件事：让 Gate 第四级能装候选权重，"
+        "即让 adapters 成为**参数侧 Δθ 的落点**。在那之前，"
+        "adapters 里装的只能是本能这类**可整体替换的 bytes**，"
+        "不是可微参数的增量"
     ),
     "policy_heads": (
         "ActionDecoder 的门控头可微，但参数更新无法被 Gate 检验："

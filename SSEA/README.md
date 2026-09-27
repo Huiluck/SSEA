@@ -49,7 +49,9 @@ SSEA/
 ├── skill_library.py               ← Milestone 3：技能编译 / 提案 / 淘汰 / 继承
 ├── verification_gate.py           ← Milestone 4 增量 1：四级安全检查（格式→沙盒→回归→环境）
 ├── experience_compiler.py         ← Milestone 4 增量 2：trace → 提案（ΔS）+ 慢环一步
-└── plasticity.py                  ← Milestone 4 增量 3：allowed_scope 边界 + Δθ 提案
+├── plasticity.py                  ← Milestone 4 增量 3：allowed_scope 边界 + Δθ 提案
+└── instinct.py                    ← Milestone 4 增量 5/6：本能先验编解码 + 特征 + 偏置
+                                     （`adapters` 的第一个消费者；v2 起分两个作用点）
 
 tests/
 ├── test_08_revisions.py          08 修订条款是否落地（55 项）
@@ -81,7 +83,7 @@ tests/
 python -m pytest tests/ -q                          # 系统 Python 也可跑，环境已补齐
 ```
 
-当前：**751 passed, 1 skipped**（skip 是 `StructureStore` 非 dataclass，
+当前：**910 passed, 1 skipped**（skip 是 `StructureStore` 非 dataclass，
 `test_annotations_resolve` 主动跳过，符合预期）。
 
 **这个数字必须在任意测试顺序下都成立**。若干测试用 `torch.randn` 从全局 RNG
@@ -100,8 +102,9 @@ for i in $(seq 0 14); do
 done
 ```
 
-15 个 seed 下均为 751 passed / 1 skipped（Milestone 4 增量 3 落地时实测；
-增量 2 收尾时 684，增量 1 收尾时 649）。这条纪律由
+15 个 seed 下均为 910 passed / 1 skipped（实验 2 / 3 落地收尾时实测；
+趋近本能收尾时 847，增量 3 收尾时 751，增量 2 收尾时 684，
+增量 1 收尾时 649）。这条纪律由
 [docs/13-milestone4-plan.md](docs/13-milestone4-plan.md) §7 定下：
 **此后每次改动都必须在这 15 个 seed 下复跑**，不只是默认顺序。
 
@@ -317,8 +320,24 @@ MemorySystem.write(a_t.memory, p_t, o_{t+1}, f_t)  # Milestone 3 新增
 `ctx.thresholds` 那一项是增量 3 落的地：门控阈值**住在结构快照里**，
 于是改它要走「提案 → 验证门 → Structure Store → WAKE 换版」整条路，
 而不必让慢环直接写 torch 参数（07 §16：模型不可绕过验证器应用修改）。
-在此之前 `FastLoopContext.get_threshold()` 是一个**没有消费者的声明**——
-改结构里的阈值对行为没有任何影响，而提案、Gate、Store 一路都是绿的。
+在此之前 `thresholds` 是一个**没有消费者的类别**——改结构里的阈值对行为没有
+任何影响，而提案、Gate、Store 一路都是绿的。
+
+> **这句话此前写成「`FastLoopContext.get_threshold()` 是一个没有消费者的声明」，
+> 2026-09-28 更正。** 两个说法差一层，而那一层正是问题所在：
+> 补上的消费者读的是**整个 mapping**（`fast_loop.py` 取 `dict(ctx.thresholds)`
+> 交给 Action Decoder，解码器要按多个键取值），**不是那个访问器**。
+> **类别活着不等于名字对应的接口活着**——这正是 14 §6.3.6「名字是标签，
+> 作用点是内容」低一级的重演。
+>
+> 四个零调用方的访问器（`get_threshold` / `get_adapter` /
+> `get_retrieval_policy` / `version_of`）**已于 2026-09-28 全部删除**。
+> 四条理由各不相同，共同点是**没有一条能指向「读了之后哪一行行为变了」**；
+> 删法也不是删代码了事——`DELETED_ACCESSORS` 记着为什么删，
+> `test_deleted_accessors_stay_deleted` 是一条**真断言**盯着它们不回来
+> （`monkeypatch` 造变异实测能红）。**没有那条断言，「已删」只是一个 commit，
+> 不是一个性质。** 见 `tests/test_consumer_surface.py`、
+> [docs/14](docs/14-overview-and-roadmap.md) §6.3.7 与 §6.4 线 D。
 
 状态机（08 §2.2 睡眠期是一等公民状态）：
 
@@ -343,7 +362,7 @@ RUN ──代谢判定──► SLEEP ──满 min_sleep_frames──► WAKE �
 |---|---|---|
 | Experience Compiler | Milestone 4 | ~~无触发器。Gate 已就绪，等它产提案~~ **已实现**（增量 2，见 §11），但只覆盖 ΔS 一类 |
 | Plasticity Controller / LocalPlasticity | Milestone 4 | 无 `allowed_scope` 的消费者 |
-| RuleCompiler | Milestone 4 | 无触发器 |
+| RuleCompiler | Milestone 4 | 无触发器；**`rules` 结构类别因此零消费者**——`ADD_RULE` / `UPDATE_RULE` 提案路径与门校验都在，只是没有代码读它去改变行为（`tests/test_consumer_surface.py` 守着这条，登记在 `NO_CONSUMER_YET`） |
 | HeritableFilter | Milestone 4 | `MemoryItem.is_heritable()` 判据已实现并有测试，消费者未接线 |
 | Gene Manager（save/load/mutate） | Milestone 4 | 协议只定义 `GenePackage` 字段 |
 | 多智能体 / 语言指令 / 奖励函数 | v0.4+ | `Communication` 只回环，无接收方 |
@@ -572,9 +591,14 @@ torch 参数侧整个不动，三条理由（完整版见 `plasticity.py` 模块
    它让文档可以写「自我修改经过验证门」，而实际上验证了什么并不知道。
 
 所以参数侧以 `DEFERRED_SCOPES` 常量声明并由测试守着，**不写返回空 tuple 的
-占位方法**。落地顺序是三步可见的工程：先给 `adapters` 补模型侧消费者
-（现在它写得进、过得门、传得下、**却没有消费者**），再让 Gate 第四级能装候选权重，
-然后才谈参数侧 Δθ。
+占位方法**。落地顺序是三步可见的工程：先给 `adapters` 补模型侧消费者，再让
+Gate 第四级能装候选权重，然后才谈参数侧 Δθ。
+
+> **第 1 步已落地（2026-09-27）**：`adapters` 的消费者是 `SSEA/instinct.py` +
+> `ActionDecoder.forward` 的两个本能参数。在它之前 `adapters` 是五类结构里
+> **唯一连读取接口都没有**的一类——写得进、过得门、传得下，只是没人读过。
+> 注意这一步**没有**让参数侧 Δθ 变得更近：本能住在结构里（可继承、可变异、
+> 过验证门），恰恰是「不做参数侧」那条路线的产物。第 2 步与它仍然无关。
 
 ### 13.3 证据只看当前版本，否则规则会撞到夹子
 
@@ -597,7 +621,7 @@ torch 参数侧整个不动，三条理由（完整版见 `plasticity.py` 模块
 
 | | 换版前开门率 | 换版后开门率 | 提案数 |
 |---|---|---|---|
-| 均值 | 0.280 | 1.000 | 6/8 提案，2/8 沉默 |
+| 均值 | 0.375 | 1.000 | 5/8 提案，3/8 沉默（2026-09-28 复跑；见 12 §6 债务 25） |
 
 **该沉默的种子保持沉默**（seed 0、1 本来就能开门，一条提案都没有）——
 这条比提升本身更重要：若它红，说明规则恒真，那么提升可能只是乱改撞对了。

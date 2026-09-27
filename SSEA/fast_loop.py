@@ -44,6 +44,13 @@ import torch
 
 from .action_decoder import ActionDecoder, DecodeCandidates
 from .environment import Environment
+from .instinct import (
+    decode_instinct_set,
+    locomotion_bias,
+    locomotion_features,
+    manipulation_bias,
+    manipulation_features,
+)
 from .memory_system import MemoryConfig, MemorySystem
 from .metabolic_monitor import MetabolicMonitor
 from .perception_encoder import PerceptionEncoder
@@ -253,9 +260,22 @@ class FastLoop:
         self.state_core = state_core or StateCore()
         self.metabolic = metabolic_monitor or MetabolicMonitor()
         self.skill_runner = skill_runner or SkillRunner(context)
-        self.memory = memory_retriever or MemorySystem(
-            MemoryConfig(memory_dim=self.state_core.config.memory_dim),
-            context,
+        # **必须写 `is not None`，不能写 `or`。** ``MemorySystem`` 定义了
+        # ``__len__``（返回库内条数），于是**刚构造出来的记忆系统是假值**——
+        # 用 ``or`` 的话，传进来的那个会被静默换成另一个新建的实例，调用方
+        # 手里的引用从此指向一个不在环里的对象。今天两者配置相同、行为一致，
+        # 所以这个替换不报错也测不出；但任何**有状态的**子类（记录器、
+        # 预载了记忆的系统）一旦初始为空就会丢掉身份，而症状是「我明明传了，
+        # 它却说没有」——正是本项目反复咬到的那类静默失效。
+        # 其余几个协作者（encoder / core / monitor / runner / decoder）都没有
+        # ``__len__``，暂不受此影响；``or`` 留着是历史写法，不动它们。
+        self.memory = (
+            memory_retriever
+            if memory_retriever is not None
+            else MemorySystem(
+                MemoryConfig(memory_dim=self.state_core.config.memory_dim),
+                context,
+            )
         )
         self.decoder = action_decoder or ActionDecoder()
 
@@ -342,6 +362,8 @@ class FastLoop:
 
         hidden_new, intent = self.state_core(p_t, m_t, body, d_t, self.hidden)
 
+        loco_instinct, manip_instinct = self._instincts(obs)
+
         a_t = self.decoder(
             intent,
             body.action_constraints,
@@ -351,6 +373,8 @@ class FastLoop:
             # （提案 → 验证门 → Structure Store → WAKE 换版），参数侧没有
             # 可验证的落点，见 SSEA/plasticity.py 的 DEFERRED_SCOPES。
             dict(self.context.thresholds),
+            loco_instinct,
+            manip_instinct,
         )
 
         self.skill_runner.submit(a_t, body, obs)
@@ -503,12 +527,52 @@ class FastLoop:
         对象 id 来自视野内对象；技能 id 来自当前快照；提案类型来自协议
         白名单。三者都是有限集合，解码器只能 argmax——否则它会产出环境中
         不存在的 object_id，而这类错误要到 Environment 才被发现。
+
+        对象**特征**与 id 逐项对应地带上（``(resource_value, threat_level,
+        distance)``，见 ``action_decoder.OBJECT_FEATURE_DIM``）：没有它，
+        ``manip_target`` 对每个候选算出相同的分，目标选择会退化成
+        「按距离取第一个」——而那个退化**不报错**，只是永远选错类别。
         """
 
         return DecodeCandidates(
             object_ids=tuple(obj.object_id for obj in obs.objects),
+            object_features=tuple(
+                (obj.resource_value, obj.threat_level, obj.distance)
+                for obj in obs.objects
+            ),
             skill_ids=tuple(self.context.skills.keys()),
             proposal_types=ALLOWED_PROPOSAL_TYPES,
+        )
+
+    def _instincts(
+        self, obs: Observation
+    ) -> tuple[torch.Tensor | None, torch.Tensor | None]:
+        """本帧的两个本能偏置 ``(loco, manip)``：从**当前快照**的 ``adapters``
+        解码，作用在观测上。
+
+        一次解码、两处投影：``decode_instinct_set`` 每帧只跑一次，两份特征是
+        两个作用点各自要的量（方向 vs 条件），所以投影分开做。
+        写成两个方法各自解码一遍也能跑，但那是同一份字节每帧解两次——
+        而且更糟的是让"解码"这件事有了两个入口，日后改格式要记得改两处。
+
+        **每帧现解，刻意不缓存。** 一份 2×4 的 float32 只有 32 字节，
+        解一次的开销可以忽略；而缓存要在换快照（``_pending_context`` 生效的
+        WAKE 帧）时失效，那是一整类"结构换了但快环还用旧的"staleness 错误——
+        而这类错误**不会报错，只会安静地少一个行为**。每帧现解让它物理上
+        不可能过期：快照是冻结的，读它得到的永远是该版本的内容。
+
+        某一个返回 ``None`` 表示"本帧在那个作用点上没有可施加的本能"
+        （快照里没有该作用点的 adapter，或特征全零，或投影恰好为零）。
+        调用方据此走原路径，于是没有本能时行为与改动前**逐位相同**——
+        这是对照组保真的依据。
+        """
+
+        instincts = decode_instinct_set(self.context.adapters)
+        if not instincts:
+            return None, None
+        return (
+            locomotion_bias(instincts, locomotion_features(obs)),
+            manipulation_bias(instincts, manipulation_features(obs)),
         )
 
     def _record(

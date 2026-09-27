@@ -87,8 +87,18 @@ class TestActionHasNoLatent:
         names = {f.name for f in dataclasses.fields(Action)}
         assert not any("latent" in n for n in names)
 
-    def test_channels_all_have_consumers(self) -> None:
-        """六个通道各有消费者（见 action.py 模块 docstring 的对照表）。"""
+    def test_channel_names_are_the_documented_six(self) -> None:
+        """六个通道名就是 docstring 那张表里的六个。
+
+        **这条不检查消费者，名字说明它检查什么。** 它此前叫
+        ``test_channels_all_have_consumers``，而它从头到尾只断言了
+        ``Action.CHANNELS`` 这个元组——**名字对了而某个通道没人读，它照样绿**。
+        那种名不副实的守卫比没有守卫更糟：后来者会据此以为覆盖面有了。
+
+        Action 六通道**真的**各有读者这件事，现在由
+        ``tests/test_consumer_surface.py::TestEveryActionChannelHasAReader``
+        断言（它扫 AST 找读者，且要求读者与 docstring 那张对照表一致）。
+        """
         assert Action.CHANNELS == (
             "locomotion",
             "manipulation",

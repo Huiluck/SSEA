@@ -15,9 +15,21 @@
 
 from __future__ import annotations
 
+import struct
+
 import pytest
+import torch
 
 from SSEA.action_decoder import GATE_THRESHOLD_KEYS
+from SSEA.instinct import (
+    FORMAT_VERSION,
+    INSTINCT_PRESETS,
+    MAGIC,
+    TARGET_LOCOMOTION,
+    TARGET_MANIPULATION,
+    encode_instinct,
+    preset_blob,
+)
 from SSEA.sse_protocols import (
     Action,
     Locomotion,
@@ -73,6 +85,17 @@ def proposal(ptype: str, target: str, pid: str = "p1", **payload: object):
 
 def store(**initial: object) -> StructureStore:
     return StructureStore(initial=initial or None)
+
+
+#: 一份**真的解得开**的 adapter。合法 adapter 现在必须是可解码的本能 blob——
+#: "非空 bytes"这条不够，见 ``_check_adapters`` 的 docstring 与 13 §4.6。
+#:
+#: 直接调生产代码的构造函数而不是手写字节：手写的那一份会漂移，
+#: 而漂移的表现是"测试过了、门拒了"。
+ADAPTER = preset_blob("approach")
+
+#: 上面那份 adapter 的原始权重矩阵（不带 gain）。给"只改一个字节"的测试用。
+ADAPTER_WEIGHTS = torch.tensor(INSTINCT_PRESETS["approach"].weights)
 
 
 #: 一个合法的阈值键。取自 action_decoder 而不是手写——手写的那一份会漂移，
@@ -184,14 +207,20 @@ class TestFormatStage:
         assert "已存在" in r.reason
 
     def test_update_target_must_exist(self, g) -> None:
-        """UPDATE_* 的 target 必须已存在——**技能 / 规则 / adapter** 这三类。
+        """UPDATE_* 的 target 必须已存在——**技能 / 规则**这两类。
 
-        ``thresholds`` 与 ``retrieval`` 是例外，且理由相反：它们是**一份扁平
-        策略**（键即策略字段名），Store 刚建起来时两个类别都是空的，而
-        MemorySystem / ActionDecoder 都会退回各自的默认值。按"已存在"判会让
-        这两个类别**永远无法被初始化**——UPDATE_* 只能改已有的键，而没有任何
-        提案能建第一个键（ALLOWED_PROPOSAL_TYPES 里没有 ADD_THRESHOLD）。
-        那条路由 ``test_flat_policy_can_be_initialized`` 守着。
+        ``thresholds`` / ``retrieval`` / ``adapters`` 是例外，理由是同一条：
+        Store 刚建起来时这三个类别都是空的，而没有任何提案能建第一个键
+        （``ALLOWED_PROPOSAL_TYPES`` 里没有 ``ADD_THRESHOLD`` / ``ADD_ADAPTER``）。
+        按"已存在"判会让它们**永远无法被初始化**。
+
+        前三者与后三者的护栏不同，这一点容易被"反正都是例外"抹平：
+
+        - ``thresholds`` / ``retrieval`` 的替代护栏是**合法键名清单**，取自
+          语义所有者（``memory_system`` / ``action_decoder``）。
+        - ``adapters`` **没有**名清单，也不该编一份：``decode_instinct_set``
+          把所有 adapter 的偏置全部相加，名字只是审计与遗传的标签。它的护栏是
+          **内容**——``_check_adapters`` 要求 blob 被真实解码器解得开。
         """
 
         s = store()
@@ -200,6 +229,29 @@ class TestFormatStage:
         )
         assert not r.passed and r.stage_failed == "format"
         assert "不存在" in r.reason
+
+    def test_first_adapter_can_be_created(self, g) -> None:
+        """空 Store 上 ``UPDATE_ADAPTER`` 必须能建第一个键。
+
+        与 ``test_flat_policy_can_be_initialized`` 同一条缺陷、同一个形状：
+        ``adapters`` 曾经也要求 target 已存在，于是这个类别**无法被初始化**。
+
+        它比那两类潜伏得更久，因为**当时没有任何代码读过 adapters**——
+        没人试过往里放第一个键，于是没人撞上这道门。② 给它补上读取接口之后，
+        一份合法的趋近先验立刻被拒，理由却是"目标 'approach' 不存在"。
+        守卫缺口的代价总是延迟支付的。
+        """
+
+        s = store()
+        assert not s.snapshot().adapters
+        assert g.check(
+            proposal("UPDATE_ADAPTER", "approach", adapter=ADAPTER), s.snapshot()
+        ).passed
+        # create-or-replace：已存在的键照样能改（这正是 UPDATE 的本义）。
+        assert g.check(
+            proposal("UPDATE_ADAPTER", "approach", adapter=ADAPTER),
+            store(adapters={"approach": ADAPTER}).snapshot(),
+        ).passed
 
     def test_unknown_threshold_key_is_rejected(self, g) -> None:
         """阈值键不在语义所有者的清单里——拒，且理由指向清单在哪。"""
@@ -355,20 +407,126 @@ class TestSandboxStage:
         assert "不是合法的策略键" in r.reason
 
     def test_empty_adapter_bytes_is_rejected(self, g) -> None:
-        s = store(adapters={"a": b"x"})
+        s = store(adapters={"a": ADAPTER})
         r = g.check(proposal("UPDATE_ADAPTER", "a", adapter=b""), s.snapshot())
         assert not r.passed
         assert r.stage_failed in ("format", "sandbox")
 
     def test_non_bytes_adapter_is_rejected(self, g) -> None:
-        s = store(adapters={"a": b"x"})
+        s = store(adapters={"a": ADAPTER})
         r = g.check(proposal("UPDATE_ADAPTER", "a", adapter={"w": 1}), s.snapshot())
         assert not r.passed
 
     def test_legal_adapter_passes(self, g) -> None:
-        s = store(adapters={"a": b"x"})
-        r = g.check(proposal("UPDATE_ADAPTER", "a", adapter=b"yyyy"), s.snapshot())
+        s = store(adapters={"a": ADAPTER})
+        r = g.check(proposal("UPDATE_ADAPTER", "a", adapter=ADAPTER), s.snapshot())
         assert r.passed, r.reason
+
+    def test_undecodable_adapter_is_rejected(self, g) -> None:
+        """**非空 bytes 但不解得开** → 拒。
+
+        这是本类里最要紧的一条，因为它治的正是 13 §4.6 记录的那个洞：
+        Store 只管版本号与审计，**不保证下游读得懂**。一份长度不对的 blob
+        完全合法地过门、升版本、进快照，然后在快环的下一帧上被静默丢弃——
+        **行为毫无变化，而审计里写着"已应用"**。这比崩溃更糟：崩溃会被发现，
+        静默丢弃只会在实验里表现为"这个机制好像没用"。
+        """
+
+        s = store(adapters={"a": ADAPTER})
+        r = g.check(
+            proposal("UPDATE_ADAPTER", "a", adapter=b"not-a-blob-at-all"),
+            s.snapshot(),
+        )
+        assert not r.passed
+        # 理由要指向"快环会丢弃它"，而不是笼统的"格式不对"——审计日志里
+        # 那句话是后来者唯一能看到的诊断。
+        assert "可解码" in r.reason
+
+    def test_wrong_shape_blob_is_rejected(self, g) -> None:
+        """格式合法、魔数对、但形状与所声明的作用点对不上 —— 同样拒。
+
+        形状对不上时 ``decode_instinct`` 返回 None，所以它与"根本不是 blob"
+        走同一条判定。这里单独钉一次，因为"能解出张量"与"能用在 2 维世界"
+        是两个条件，而只测前者会漏掉后者。
+
+        **字节是手搓的，不走 ``encode_instinct``**：编码侧现在会拒绝这种形状
+        （它在提案成形的路径上，能抛就抛），所以一份"格式对、形状错"的 blob
+        只能来自别处——更早的版本、另一个实现、或者被改坏的字节。而这正是
+        门要面对的东西：**门必须扛得住编码器不会产出的输入**，否则它守的
+        只是"我们自己没写错"，不是"结构里装的能用"。
+        """
+
+        blob = (
+            MAGIC
+            + struct.pack("<BBHH", FORMAT_VERSION, TARGET_LOCOMOTION, 3, 7)
+            + b"\x00" * (3 * 7 * 4)
+        )
+        s = store(adapters={"a": ADAPTER})
+        r = g.check(proposal("UPDATE_ADAPTER", "a", adapter=blob), s.snapshot())
+        assert not r.passed
+        assert "可解码" in r.reason
+
+    def test_unknown_target_blob_is_rejected(self, g) -> None:
+        """作用点字节不认识 —— 拒。
+
+        这是 v2 新增的一格，也是最该由门来拦的一格：作用点决定这份权重加到
+        哪个量上，一个门不认识的作用点意味着**快环也解释不了它**。门若放行，
+        审计里会写着"已应用"，而快环每帧静默丢弃它——行为毫无变化。
+        """
+
+        s = store(adapters={"a": ADAPTER})
+        blob = bytearray(encode_instinct(ADAPTER_WEIGHTS, target=TARGET_LOCOMOTION))
+        blob[len(MAGIC)] = 77  # 只改作用点字节，其余原样
+        r = g.check(
+            proposal("UPDATE_ADAPTER", "a", adapter=bytes(blob)), s.snapshot()
+        )
+        assert not r.passed
+        assert "可解码" in r.reason
+
+    @pytest.mark.parametrize("bad", [float("inf"), float("nan")])
+    def test_non_finite_weight_blob_is_rejected(self, g, bad) -> None:
+        """权重里有 ``inf`` / ``nan`` —— 拒。理由与形状错同源，后果更重。
+
+        这种 blob **解得开**（魔数对、作用点认识、形状也对），所以它是最容易
+        溜过门的一类坏输入。而它一旦进了结构，快环那边算什么就是非有限数，
+        操纵链的 ``argmax`` 会因此把被约束屏蔽成 ``-inf`` 的 op 选出来——
+        **一份先验顶掉了约束**。
+
+        门这里拒它的方式与拒形状错完全一样：调同一个 ``decode_instinct``。
+        这条测试因此也守着"门不另写一份格式校验"——两份校验必然漂移，
+        而漂移方向固定是门更宽松。
+        """
+
+        blob = (
+            MAGIC
+            + struct.pack(
+                "<BBHH", FORMAT_VERSION, TARGET_MANIPULATION, 2, 4
+            )
+            + struct.pack("<8f", 1.0, 1.0, 0.0, 0.0, bad, 1.0, 0.0, 0.0)
+        )
+        s = store(adapters={"a": ADAPTER})
+        r = g.check(proposal("UPDATE_ADAPTER", "a", adapter=blob), s.snapshot())
+        assert not r.passed
+        assert "可解码" in r.reason
+
+    def test_both_targets_are_accepted(self, g) -> None:
+        """两个作用点的 blob 都要能进门——门**不认识作用点的语义**，只认识
+        "解码器解得开"。它不该有一份关于"哪些作用点算合法"的私有清单：
+        那份清单会与 ``TARGET_SHAPES`` 漂移，而漂移的方向是固定的
+        （门更宽松，于是放行一份快环用不了的东西）。
+        """
+
+        s = store(adapters={"a": ADAPTER})
+        for target in (TARGET_LOCOMOTION, TARGET_MANIPULATION):
+            r = g.check(
+                proposal(
+                    "UPDATE_ADAPTER",
+                    "a",
+                    adapter=encode_instinct(ADAPTER_WEIGHTS, target=target),
+                ),
+                s.snapshot(),
+            )
+            assert r.passed, f"作用点 {target} 被拒了：{r.reason}"
 
 
 # ----------------------------------------------------------------------
@@ -388,7 +546,7 @@ class TestRegressionStage:
         s = store(
             skills={"s1": skill("s1")},
             thresholds={THRESHOLD_KEY: 0.5},
-            adapters={"a": b"x"},
+            adapters={"a": ADAPTER},
             retrieval={"top_k": 2},
         )
         r = g.check(proposal("UPDATE_THRESHOLD", THRESHOLD_KEY, value=0.9), s.snapshot())
@@ -649,7 +807,7 @@ class TestEveryProposalType:
                 "UPDATE_RETRIEVAL_POLICY", "top_k", policy=8
             ),
             "UPDATE_ADAPTER": lambda: proposal(
-                "UPDATE_ADAPTER", "a", adapter=b"zzzz"
+                "UPDATE_ADAPTER", "a", adapter=ADAPTER
             ),
         }[ptype]()
 
@@ -682,7 +840,7 @@ class TestEveryProposalType:
                 "skills": {} if adding else {"s1": skill("s1")},
                 "rules": {} if adding else {"r1": {"if": "x"}},
                 "thresholds": {} if adding else {THRESHOLD_KEY: 0.5},
-                "adapters": {} if adding else {"a": b"x"},
+                "adapters": {} if adding else {"a": ADAPTER},
                 "retrieval": {} if adding else {"top_k": 4},
             }
         )

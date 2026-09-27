@@ -17,7 +17,7 @@ from SSEA.fast_loop import (
     StepRecord,
     ZeroMemoryRetriever,
 )
-from SSEA.memory_system import MemorySystem
+from SSEA.memory_system import MemoryConfig, MemorySystem
 from SSEA.metabolic_monitor import MetabolicMonitor
 from SSEA.sse_protocols import (
     Action,
@@ -525,6 +525,30 @@ class TestZeroMemory:
         records = loop.run()
         assert records
         assert not isinstance(loop.memory, MemorySystem)
+
+    def test_a_passed_memory_system_is_not_silently_replaced(self) -> None:
+        """传进去的检索器必须**就是**环里用的那一个。
+
+        这里防的是一个静默替换：``MemorySystem`` 定义了 ``__len__``，
+        所以**刚构造出来的记忆系统是假值**，而 ``FastLoop`` 原先写的是
+        ``memory_retriever or MemorySystem(...)``——于是"传进去"与"用上了"
+        是两件事，且不报错。今天两者配置相同、行为一致，所以从行为上
+        测不出来；能测出来的只有**身份**。任何有状态的子类（记录器、
+        预载记忆）一旦初始为空就会丢掉身份。
+
+        钉住的是身份而不是行为，因为行为恰好相同正是这个缺陷能活下来的原因。
+        """
+
+        context = make_context()
+        passed = MemorySystem(MemoryConfig(memory_dim=16), context)
+        assert not passed, "前提：刚构造的 MemorySystem 是假值（__len__ == 0）"
+        loop = FastLoop(
+            Environment(seed=3),
+            context,
+            memory_retriever=passed,
+            config=FastLoopConfig(max_frames=5, min_sleep_frames=3),
+        )
+        assert loop.memory is passed
 
 
 class TestMemoryIntegration:

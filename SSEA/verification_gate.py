@@ -92,6 +92,29 @@ _ADD_TYPES = frozenset({"ADD_SKILL", "ADD_RULE"})
 #: 移除类提案——target 必须已存在，且不需要 payload。
 _REMOVE_TYPES = frozenset({"DISABLE_SKILL"})
 
+#: 「UPDATE 即创建」类提案——target **不判存在性**。
+#:
+#: ``adapters`` 与 ``retrieval`` / ``thresholds`` 曾经是**同一个洞**：
+#: ``UPDATE_*`` 只改已有的键，而没有任何提案能建第一个键，于是类别
+#: **永远无法被初始化**。那两类当时被发现了（MemorySystem 与 ActionDecoder
+#: 都要用），``adapters`` 没有——**因为当时没有任何代码读过 ``adapters``**，
+#: 也就没人试过往里放第一个键。② 给它补上读取接口之后，这个洞当场暴露：
+#: 一份合法的趋近先验被门拒掉，理由却是"目标 'approach' 不存在"。
+#:
+#: 与那两类不同的是，这里**不做合法键名检查**——因为不存在合法名清单：
+#: ``instinct.decode_instinct_set`` 把所有 adapter 的偏置**全部相加**，
+#: 名字纯粹是审计与遗传用的标签，不参与解码。编一份名清单等于编一份假护栏。
+#:
+#: 真正管住它的是**内容**而非名字：``_check_adapters`` 要求 blob 必须被
+#: **真实解码器**解得开。这比名字检查强——名字检查管拼写，内容检查管
+#: "下游读不读得懂"，而后者才是 13 §4.6 那个洞的成因。
+#:
+#: 副作用要写明：``UPDATE_ADAPTER`` 因此是 **create-or-replace**。这与另两类
+#: UPDATE 的实际行为一致——``_apply_to_copy`` 与 ``StructureStore._apply``
+#: 本来就是 ``current[target] = ...``，建键是它们的固有语义，此前只是被
+#: 这道存在性检查挡在门外。
+_CREATE_OR_UPDATE_TYPES = frozenset({"UPDATE_ADAPTER"})
+
 
 @dataclass(frozen=True)
 class GateConfig:
@@ -191,7 +214,7 @@ class VerificationGate:
                     f"{ptype} 的目标 {proposal.target!r} 不是合法的{label}键；"
                     f"合法键见 {'memory_system.DEFAULT_RETRIEVAL_POLICY' if ptype == 'UPDATE_RETRIEVAL_POLICY' else 'action_decoder.GATE_THRESHOLD_KEYS'}"
                 )
-        elif ptype not in _ADD_TYPES | _REMOVE_TYPES and proposal.target not in current:
+        elif ptype not in _ADD_TYPES | _REMOVE_TYPES | _CREATE_OR_UPDATE_TYPES and proposal.target not in current:
             return False, f"{ptype} 的目标 {proposal.target!r} 不存在"
 
         if ptype in _REMOVE_TYPES:
@@ -424,11 +447,23 @@ def _check_thresholds(thresholds: Mapping[str, Any]) -> tuple[bool, str]:
 
 
 def _check_adapters(adapters: Mapping[str, Any]) -> tuple[bool, str]:
-    """adapter 不变量：值都是 bytes，非空。
+    """adapter 不变量：值都是 bytes、非空，**且真的解得开**。
 
     第一阶段的 adapter 是**权重片段**而非配置 dict——这是 08 §2.1 注入物
     五类里唯一直接携带参数的一类，所以它的形状必须被管住。
+
+    「非空 bytes」这一条**不够**，而补上的这一条是 13 §4.6 的教训的直接应用：
+    **Store 只管版本号与审计，不保证下游读得懂。** 一份长度不对、版本不认识、
+    形状是 3×7 的 blob 完全可以是"非空 bytes"，一路过门、升版本、进快照，
+    然后在快环的**下一帧**上被静默丢弃——行为毫无变化，而审计里写着"已应用"。
+    这与 ``UPDATE_RETRIEVAL_POLICY`` 当年写出下游读不懂的形状是同一个洞
+    （债务 7），只是那次快环崩了所以被发现，这次不会崩，只会安静地少一个行为。
+
+    **校验调用真实的解码器，不另写一份格式检查。** 两份格式知识必然漂移，
+    而漂移的方向是固定的：门这边更宽松，于是门放行了一份快环用不了的东西。
     """
+
+    from .instinct import decode_instinct
 
     for key, value in adapters.items():
         if not isinstance(value, (bytes, bytearray)):
@@ -437,6 +472,11 @@ def _check_adapters(adapters: Mapping[str, Any]) -> tuple[bool, str]:
             )
         if not value:
             return False, f"adapter {key!r} 为空"
+        if decode_instinct(value) is None:
+            return False, (
+                f"adapter {key!r} 不是可解码的本能 blob（长度 {len(value)}）——"
+                "提交后快环会静默丢弃它，行为不会有任何变化"
+            )
     return True, ""
 
 

@@ -141,7 +141,8 @@ doc 02 给了四个候选（好奇心与惊奇感、心流状态、社会性连�
 进入理由，能量不参与判定。**「入口必须窄」由疲劳单独承担——它是自限的
 （睡眠每帧恢复 0.15，醒来归零，约 30 帧不应期），而能量没有不应期、只有正反馈。
 
-实测修正后 7/8 seed 可达、睡眠占寿命 6%–12%。完整推导与数字见
+实测修正后 **8/8 seed 可达**（2026-09-28 复跑，8 个 seed 全部进入过睡眠；
+记录原为 7/8，见 [12](12-progress-report.md) §6 债务 25）、睡眠占寿命 6%–12%。完整推导与数字见
 [14-overview-and-roadmap.md](14-overview-and-roadmap.md) §6.3.1 与
 [13-milestone4-plan.md](13-milestone4-plan.md) §6.6；
 实现见 `SSEA/metabolic_monitor.py::MetabolicMonitor.wants_sleep`。

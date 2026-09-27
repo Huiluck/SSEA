@@ -11,6 +11,8 @@
 
 from __future__ import annotations
 
+import copy
+
 import pytest
 
 from SSEA.sse_protocols import (
@@ -319,16 +321,80 @@ class TestInheritanceSurface:
             GateResult(passed=True),
             timestamp=1.0,
         )
-        assert store.snapshot().get_threshold("caution") == 0.7
-        assert store.snapshot().get_threshold("missing", default=0.25) == 0.25
+        # 读**字段本身**，与真消费者的读法一致（`fast_loop.py` 取
+        # `dict(context.thresholds)` 交给解码器）。曾有一对断言用
+        # `get_threshold()`——那是个零调用方的访问器，它的 `default=0.0`
+        # 与两个真消费者的回落都对不上，2026-09-28 随访问器一并删除。
+        assert store.snapshot().thresholds["caution"] == 0.7
+        assert "missing" not in store.snapshot().thresholds
 
-    def test_retrieval_policy_returns_copy(self) -> None:
-        store = StructureStore(
-            initial={"retrieval": {"default": {"top_k": 4, "min_importance": 0.3}}}
+    def test_snapshot_fields_are_read_only(self) -> None:
+        """快照顶层只读——``frozen=True`` 只挡**重新绑定**，不挡**就地改**。
+
+        就地改快照是一次**绕过「提案 → 验证门 → Structure Store」的行为变更**
+        （07 §16「模型不可绕过验证器应用修改」），而且不留版本号、不进审计。
+        字段注解写的是 ``Mapping``（只读承诺），此前装的却是可变 ``dict``——
+        承诺与事实差一层。现在顶层包成 ``MappingProxyType``。
+
+        *本测试只声称顶层*：``MappingProxyType`` 是浅的。深度不可变是更深一层
+        的题目，见 ``fast_loop_context`` 模块 docstring 的边界说明。
+        """
+
+        ctx = StructureStore(initial={"retrieval": {"top_k": 4}}).snapshot()
+        for name in ("skills", "rules", "adapters", "thresholds", "retrieval", "versions"):
+            with pytest.raises(TypeError):
+                getattr(ctx, name)["x"] = 1  # type: ignore[index]
+        # 就地写的其它写法在 mappingproxy 上连方法都没有。
+        with pytest.raises(AttributeError):
+            ctx.retrieval.update({"top_k": 999})  # type: ignore[attr-defined]
+        assert ctx.retrieval["top_k"] == 4, "快照内容被改动了"
+
+    def test_the_wrap_is_what_makes_it_read_only(
+        self, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        """证明「只读」确实来自 ``__post_init__`` 那层包装，不是来自别处。
+
+        把 ``__post_init__`` 换成不做包装的版本，同一个写入就必须**成功**。
+        没有这条，上面那条测试可能只是碰巧在别的机制上空的绿——**而
+        「碰巧绿」正是本项目反复咬到的形状**（守卫名不副实、断言测的是名字）。
+        """
+
+        from SSEA.sse_protocols import FastLoopContext
+
+        def _no_wrap(self: object) -> None:
+            for name in (
+                "skills",
+                "rules",
+                "adapters",
+                "thresholds",
+                "retrieval",
+                "versions",
+            ):
+                if getattr(self, name) is None:
+                    raise ValueError(f"{name} 不能为 None；空结构用空 Mapping")
+
+        monkeypatch.setattr(FastLoopContext, "__post_init__", _no_wrap)
+        ctx = StructureStore(initial={"retrieval": {"top_k": 4}}).snapshot()
+
+        ctx.retrieval["top_k"] = 999  # type: ignore[index]
+        assert ctx.retrieval["top_k"] == 999, (
+            "去掉包装后写入仍被挡住了——那说明「只读」另有来源，"
+            "上面那条测试守的不是这层包装"
         )
-        policy = store.snapshot().get_retrieval_policy()
-        policy["default"]["top_k"] = 999
-        assert store.snapshot().get_retrieval_policy()["default"]["top_k"] == 4
+
+    def test_deepcopy_of_a_snapshot_works(self) -> None:
+        """``deepcopy(ctx)`` 必须可用——默认路径在本类上是坏的。
+
+        ``deepcopy`` 一个 ``mappingproxy`` 抛 ``TypeError: cannot pickle
+        'mappingproxy' object``（实测），所以 ``__deepcopy__`` 不是锦上添花：
+        没有它，本类在「深拷贝」这个基础操作上直接坏掉。而没有这条测试，
+        那个 ``__deepcopy__`` 就是一段谁也没走过的代码。
+        """
+
+        ctx = StructureStore(initial={"retrieval": {"top_k": 4}}).snapshot()
+        clone = copy.deepcopy(ctx)
+        assert clone == ctx
+        assert clone.retrieval is not ctx.retrieval, "深拷贝与原件共享了容器"
 
 
 # ----------------------------------------------------------------------
@@ -379,12 +445,6 @@ class TestAuditability:
         assert store.applied_count() == 2
         assert store.rejected_count() == 1
         assert len(store.audit_log()) == 3
-
-    def test_version_unknown_kind_raises(self) -> None:
-        store = StructureStore()
-        ctx = store.snapshot()
-        with pytest.raises(KeyError, match="未知的结构类别"):
-            ctx.version_of("weights")
 
 
 # ----------------------------------------------------------------------

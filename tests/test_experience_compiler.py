@@ -453,7 +453,15 @@ class TestSleepActuallyCompiles:
     def _policy(env: Environment):
         """出去再回来（耗掉能量上限的头寸），然后连抓资源簇。"""
 
-        def decode(intent, constraints, drive, candidates=None, gate_thresholds=None):
+        def decode(
+            intent,
+            constraints,
+            drive,
+            candidates=None,
+            gate_thresholds=None,
+            loco_instinct=None,
+            manip_instinct=None,
+        ):
             if env.time < TestSleepActuallyCompiles.N_WARMUP:
                 out = env.time < TestSleepActuallyCompiles.N_WARMUP / 2
                 return Action(

@@ -316,3 +316,128 @@ class TestTrainability:
         assert isinstance(action.locomotion.duration, float)
         assert isinstance(action.locomotion.direction, tuple)
         assert all(isinstance(v, float) for v in action.locomotion.direction)
+
+
+class TestTargetScoringIsReal:
+    """目标打分必须**逐候选不同**（债务 5）。
+
+    修正前的形状格外隐蔽：``manip_target`` 是个 ``nn.Linear(64, 1)``，
+    参数在、梯度在、挂在 ``nn.Module`` 上，但 ``forward`` 里写的是
+    ``self.manip_target(h).expand(n)``——把 (1,) 的分值复制成 n 份等值张量，
+    ``argmax`` 因此**恒返回 0**。头算出来的那个数被整个丢掉了。
+
+    后果是目标选择退化成「按距离取第一个」：不管最近的是资源、危险源还是
+    石头。这不会报错，只会让 agent 一直抓错东西——而"抓了但没抓到资源"
+    在 ``ENERGY_GAINED`` 上看起来就像"没抓"。
+
+    这个类里的断言必须能**在修回 ``expand`` 时变红**，否则它们只是装饰。
+    """
+
+    @staticmethod
+    def _feats(*rows: tuple[float, float, float]) -> DecodeCandidates:
+        return DecodeCandidates(
+            object_ids=tuple(f"o{i}" for i in range(len(rows))),
+            object_features=tuple(rows),
+        )
+
+    @staticmethod
+    def _force_gate_open(decoder: ActionDecoder) -> None:
+        """把 manipulation 门强制打开。
+
+        本类测的是**目标打分**，不是门控。门控值随机初始化、约一半 seed 恒闭
+        （12 §4.3），不强制的话断言"选了谁"会因为通道根本没开而落空——
+        那是拿抽奖当断言。
+        """
+
+        with torch.no_grad():
+            decoder.gates["manipulation"].weight.zero_()
+            decoder.gates["manipulation"].bias.fill_(10.0)
+
+    @staticmethod
+    def _prefer(decoder: ActionDecoder, dim: int) -> None:
+        """把 ``manip_target`` 设成"只看第 ``dim`` 个特征"。
+
+        用 **bias** 而不是 weight：weight 版本的分值会带上 ``h`` 的符号，
+        于是"选谁"取决于随机初始化出来的 ``h[0]`` 是正是负——测试就变成了
+        抽奖。bias 版让偏好与 ``h`` 完全无关，测的才是特征这一侧。
+        """
+
+        with torch.no_grad():
+            decoder.manip_target.weight.zero_()
+            decoder.manip_target.bias.zero_()
+            decoder.manip_target.bias[dim] = 1.0
+
+    def test_features_must_align_with_ids(self) -> None:
+        with pytest.raises(ValueError, match="逐项对应"):
+            DecodeCandidates(object_ids=("a", "b"), object_features=((1.0, 0.0, 0.0),))
+
+    def test_feature_dim_is_checked(self) -> None:
+        with pytest.raises(ValueError, match="OBJECT_FEATURE_DIM"):
+            DecodeCandidates(object_ids=("a",), object_features=((1.0, 0.0),))
+
+    def test_no_features_is_allowed(self) -> None:
+        """留空合法（老调用点），但那是**退化情形**，不是另一条路径。"""
+
+        assert DecodeCandidates(object_ids=("a", "b")).object_features == ()
+
+    def test_choice_follows_candidate_features_not_index(self) -> None:
+        """同一帧、同一偏好，**只改候选特征的顺序**，选中的目标要跟着变。
+
+        这是"打分真的逐候选算了"最直接的证据：分若只依赖 ``h`` 与下标，
+        换顺序不会改变"选第几个"。
+        """
+
+        cons = constraints()
+
+        # 资源在**第三个**候选。若打分退化（expand 成等值张量），会选 o0。
+        decoder = ActionDecoder()
+        self._prefer(decoder, 0)  # 只看 resource_value
+        self._force_gate_open(decoder)
+        candidates = self._feats(
+            (0.0, 0.9, 0.1),  # 危险源，最近
+            (0.0, 0.0, 0.2),  # 石头
+            (0.8, 0.0, 0.5),  # 资源，最远
+        )
+        action = decode(decoder, cons, candidates)
+        assert action.manipulation is not None, "门已强制打开，不应为 None"
+        assert action.manipulation.target_id == "o2", (
+            "打分退化成了「按距离取第一个」——检查 manip_target 的输出"
+            "是不是又被 expand 成等值张量丢掉了"
+        )
+
+    def test_choice_follows_the_head_preference(self) -> None:
+        """改**头的参数**要改变选择——证明头的输出真的被用上了。
+
+        与上一条合起来把两边都钉住：候选特征换了要变（上一条），
+        头的偏好换了也要变（这一条）。只钉一边的话，
+        "打分 = 某个与头和特征都无关的常量"这种退化仍可能蒙混过关。
+        """
+
+        cons = constraints()
+        candidates = self._feats(
+            (0.1, 0.9, 0.5),  # 威胁最高的是 o0
+            (0.7, 0.0, 0.5),  # resource_value 最高的是 o1
+        )
+
+        decoder = ActionDecoder()
+        self._force_gate_open(decoder)
+
+        self._prefer(decoder, 0)  # 偏好 resource_value
+        assert decode(decoder, cons, candidates).manipulation.target_id == "o1"
+
+        self._prefer(decoder, 1)  # 偏好 threat_level
+        assert decode(decoder, cons, candidates).manipulation.target_id == "o0"
+
+    def test_missing_features_degenerates_to_first(self) -> None:
+        """没有特征 → 各候选同分 → 取第一个。这是**退化**，不是另一条路径。
+
+        写明它是因为"取第一个"正是修正前的**正常**行为。区别在于修正前
+        无论有没有特征都取第一个；现在只有真没特征时才如此。
+        """
+
+        decoder = ActionDecoder()
+        self._force_gate_open(decoder)
+        action = decode(
+            decoder, constraints(), DecodeCandidates(object_ids=("a", "b", "c"))
+        )
+        assert action.manipulation.target_id == "a"

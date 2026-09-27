@@ -40,6 +40,7 @@ Gene Manager（Milestone 4）的职责，不属于协议层。
 from __future__ import annotations
 
 import base64
+import collections.abc as abc
 import dataclasses
 import importlib
 import typing
@@ -91,7 +92,17 @@ def _encode(value: Any, hint: Any) -> Any:
     origin = typing.get_origin(hint)
     args = typing.get_args(hint)
 
-    if origin in (dict, typing.Mapping) or hint in (dict, typing.Mapping):
+    # **比的是 collections.abc.Mapping，不是 typing.Mapping。**
+    # 这里曾写 ``origin in (dict, typing.Mapping)``，而那句对 Mapping 永远为假：
+    # ``typing.get_origin(Mapping[str, Any])`` 返回的是
+    # ``collections.abc.Mapping``，与 ``typing.Mapping`` 既不 ``is`` 也不 ``==``。
+    # 于是这个分支对**带 Mapping 标注的字段从来没生效过**，实际生效的是下面
+    # 「无类型容器」那条 ``isinstance(value, dict)``——它拿 ``Any`` 当值的 hint，
+    # **把标注里的值类型静默丢掉了**（``Mapping[str, Skill]`` 被当成
+    # ``Mapping[str, Any]`` 编码）。2026-09-28 给快照字段包 ``MappingProxyType``
+    # 时暴露出来：``isinstance(mappingproxy, dict)`` 为假，序列化直接 TypeError，
+    # 撞坏了 07 §11「所有接口可序列化为 JSON」。两处一并修。
+    if origin in (dict, abc.Mapping) or hint in (dict, abc.Mapping):
         val_hint = args[1] if len(args) == 2 else Any
         return {str(k): _encode(v, val_hint) for k, v in value.items()}
 
@@ -99,8 +110,9 @@ def _encode(value: Any, hint: Any) -> Any:
         item_hint = args[0] if args else Any
         return [_encode(v, item_hint) for v in value]
 
-    # 无类型容器
-    if isinstance(value, dict):
+    # 无类型容器。**认 Mapping 而不是 dict**：协议层的契约是「可序列化」，
+    # 不该因为调用方用了 Mapping 的别的实现（如 MappingProxyType）就报错。
+    if isinstance(value, abc.Mapping):
         return {str(k): _encode(v, Any) for k, v in value.items()}
     if isinstance(value, (list, tuple, set, frozenset)):
         return [_encode(v, Any) for v in value]
