@@ -221,6 +221,17 @@ class StructureStore:
             nxt[target] = proposal.payload.get("value")
             return nxt
         if ptype == "UPDATE_RETRIEVAL_POLICY":
+            # ``retrieval`` 是**一份扁平的策略**——键就是策略字段名（top_k /
+            # stride / types / ...），不是 name→policy 的映射。MemorySystem 把
+            # ``context.retrieval`` 整个交给 validate_retrieval_policy，所以这里
+            # 只能是「改一个键」，与 UPDATE_THRESHOLD 同形：``target`` 是策略键名，
+            # ``policy`` 是它的新值。
+            #
+            # 曾经写成 ``nxt[target] = policy``（把整份策略塞进 retrieval[target]），
+            # 于是提交后 retrieval 变成 ``{"default": {"top_k": 8}}``，而 MemorySystem
+            # 读到未知键 "default" 直接 ValueError——**快环在下一个 WAKE 上崩**。
+            # 这条路是 Verification Gate 逼出来的：没有门的时候，没人会发现一条
+            # 过审的提案会让闭环炸掉。见 docs/12-progress-report.md §6 债务 7。
             nxt[target] = proposal.payload.get("policy")
             return nxt
         if ptype == "UPDATE_ADAPTER":

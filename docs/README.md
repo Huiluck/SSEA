@@ -47,13 +47,20 @@
 | [10-boundary-definition-table.md](10-boundary-definition-table.md) | Milestone 0：边界定义表。三条判定测试、17 要素的模型/接口/生态三分、平局裁决先例、后续阶段池 | Milestone 0 交付物 |
 | [11-phase1-not-doing-list.md](11-phase1-not-doing-list.md) | Milestone 0：不做清单。20 项不做的具体理由与失败模式、7 类易误解项、突破清单的流程门槛 | Milestone 0 交付物 |
 | [12-progress-report.md](12-progress-report.md) | 项目进度报告。07 §18 十二项完成标准逐条对账、已有数字与尚无数字的区分、Milestone 4/5 待办与执行顺序、六项已知债务 | **进度快照（2026-09-27）** |
+| [13-milestone4-plan.md](13-milestone4-plan.md) | Milestone 4 执行计划。依赖盘点、修正后的执行顺序、增量 1–3（Verification Gate / Experience Compiler / Plasticity Controller）的设计、验收与落地结果 | **执行计划（进行中）** |
+| [14-overview-and-roadmap.md](14-overview-and-roadmap.md) | 项目总览与路线图。自足入口：项目是什么、架构现状、能力边界、证据现状、依赖图与关键路径 | **入口文档（2026-09-27）** |
 
 ## 阅读顺序
+
+**第一次接触这个项目，从 [14](14-overview-and-roadmap.md) 开始**——它是自足的入口，
+不预设你读过任何其他文档。想深入某一面时再按下面的顺序走。
 
 01 → 02 → 03 → 04 → 05 → 06 → 07 → 08 → 09 / 10 / 11。
 01–04 是思考过程，05 是第一版正式任务书，06 是自我答辩，07 是修订后的当前版本，
 **08 是对 07 的模糊地带补全**，**09–11 是 Milestone 0 的三份交付物**（互为支撑，建议连读）。
 **12 是进度快照**，回答「现在到哪了、什么有效什么还没证据」，与上面十一篇是叙述关系而非递进关系。
+**13 是 Milestone 4 的执行计划**，取代 12 §5.3 的排序（那份排序把价值判断当成了依赖判断）。
+**14 是总览与路线图**：12 回答「到哪了」（向后看），14 回答「往哪走」（向前看）。
 
 > **注意**：07 仍是任务书本体，但 08 修订了它的第 5、6、8、9 节及运行公式。动手写 Milestone 1 的接口协议前，必须先读 08 的第 5 节修订条款汇总表。
 >
@@ -64,9 +71,11 @@
 按 07 的推荐执行顺序，并按 08 的修订条款实现。
 
 **已完成**：Milestone 0（09 / 10 / 11）、Milestone 1（接口协议）、
-Milestone 2（快环骨架）、Milestone 3（记忆与技能），
+Milestone 2（快环骨架）、Milestone 3（记忆与技能）、
+Milestone 4 增量 1–3（Verification Gate / Experience Compiler / Plasticity Controller），
 代码见 [`SSEA/`](../SSEA/)，
 说明见 [SSEA/README.md](../SSEA/README.md)。
+**总览与路线图见 [14](14-overview-and-roadmap.md)**。
 
 **当前处于 Milestone 4（慢环本体）**：
 
@@ -85,7 +94,7 @@ Milestone 2 已按 08 §4.1 的快环公式实现：State Core 选 GRU（L1 算�
 Action Decoder 与 Environment 之间，睡眠期实现为一等公民状态
 （RUN → SLEEP → WAKE → RUN），死亡快照经 `on_death` 钩子触发。
 07 §11 的验收「Observation → perception_vector → hidden_state → Action
-闭环可运行」已由 `tests/test_fast_loop.py` 覆盖，全套件 **436 passed, 1 skipped**。
+闭环可运行」已由 `tests/test_fast_loop.py` 覆盖。
 
 Milestone 3 已实现 `memory_system.py` 与 `skill_library.py`，替换掉两个占位：
 `ZeroMemoryRetriever`（`m_t` 恒为零）换成真实的 `MemorySystem`，
@@ -96,12 +105,43 @@ Milestone 3 已实现 `memory_system.py` 与 `skill_library.py`，替换掉两�
 分辨。`ZeroMemoryRetriever` 保留为消融对照组，不是默认值。
 
 07 §11 的四条验收（写入 / 检索 / 保存技能 / 调用技能）已由
-`tests/test_memory_system.py`（87 项）与 `tests/test_skill_library.py`（57 项）
-覆盖，全套件 **595 passed, 1 skipped**。
+`tests/test_memory_system.py`（87 项）与 `tests/test_skill_library.py`（57 项）覆盖。
 
-## 下一步（Milestone 4）
+Milestone 4 增量 1–3 已实现 `verification_gate.py`、`experience_compiler.py`
+与 `plasticity.py`。Gate 做四级检查（格式 → 沙盒 → 回归 → 小范围环境测试），
+产出 `GateResult` 交给 `StructureStore.commit()` 内部分流。Gate **不打分**——
+SSEA 只有淘汰函数（C9），两个提案一个让存活翻倍一个减半，只要都合法，
+Gate 一视同仁。编译器吃 trace 吐提案，**不提交、不评估、不自己发明切分规则**；
+`make_slow_loop_hook` 把它接成 `SLEEP` 末尾的钩子，于是睡眠期真的整理经验了。
 
-慢环本体：Experience Compiler、RuleCompiler、Plasticity Controller、
-Verification Gate、Gene Manager，以及 `MemoryItem.is_heritable()` 的消费者
-HeritableFilter。Milestone 3 已把它们要消费的产物（trace、提案、可继承判据、
-统计回写）全部备齐，缺的是把 `SLEEP` 末尾的钩子从 `None` 换成真的实现。
+增量 3（可塑性）把 07 §6.7 的两张清单变成可执行的边界：`PlasticityController`
+回答"这个能不能改"（**白名单**，且不可更新清单**先于**白名单匹配），
+`LocalPlasticity` 按**可观测症状**提 Δθ——"值得记的帧上门从没开过"就降低
+`memory_gate_threshold`，"写进去了却读不回来"就降低 `min_similarity`，
+两者皆非则沉默。第一阶段的 Δθ 是**结构侧**阈值，参数侧整个推迟：
+权重增量递进 Gate 的第四级它看不见，硬塞进 `UPDATE_ADAPTER` 会让
+"经过验证门"这句话变成假话。
+
+这一级修了两处断点：`FastLoopContext.get_threshold()` 原本是个**没有消费者的
+声明**（改结构阈值对行为毫无影响，而提案、Gate、Store 一路都是绿的）；
+`thresholds` 这个结构类别原先**永远无法被初始化**（格式级要求 target 已存在，
+而没有任何提案类型能建第一个键）。完整记录见
+[13-milestone4-plan.md](13-milestone4-plan.md) §4.6、§5 与 §6。
+
+全套件当前 **737 passed, 1 skipped**，且在 `pytest-randomly` 的 15 个随机
+seed 下均为此结果（顺序不变性已有自动守卫，见
+[requirements.txt](../requirements.txt)）。
+
+## 下一步（Milestone 4 剩余）
+
+慢环本体剩余：RuleCompiler、HeritableFilter、Gene Manager，
+以及 `DeathHook` 的接线。执行顺序见
+[13-milestone4-plan.md](13-milestone4-plan.md) §3。
+
+**但补组件本身不产生有效性证据。** 详见 [14](14-overview-and-roadmap.md) §6：
+
+- **§12 实验 6（安全自我修改）的前置已全部就绪**——Gate 与提案生产者（ΔS + Δθ）都在，
+  它是七个验收实验里第一个可以开跑的。
+- **实验 1（非语言闭环）** 缺的只是一个测量脚本，不是实现。
+- **真正的瓶颈是「世界里没有可学的成功」**——默认随机初始化解码器从不 emit grasp，
+  而 grasp 是唯一正能量来源。它挡住实验 2 / 3 / 7 三个，是性价比最高的一处修改。

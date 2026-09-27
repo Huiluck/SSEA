@@ -26,6 +26,21 @@ docs/08-dual-loop-interface-and-gap-closure.md §2.6.2。
 ``locomotion`` 例外：它常开，因为"移动或原地不动"是每帧都要表达的基本意图。
 若全部门控关闭（不应发生），回退到 ``idle_action()`` 而非产出空 Action。
 
+门控阈值住在结构里
+----------------
+门控阈值**不是**模型的私有参数，是 ``FastLoopContext.thresholds`` 里的一项
+行为策略（键名见 ``GATE_THRESHOLD_KEYS``）。``forward`` 的 ``gate_thresholds``
+参数就是那个映射；不给时退回 ``config.gate_threshold``。
+
+为什么这样接：慢环要能改变门控，而 07 §16「模型不可绕过验证器应用修改」
+禁止它直接写 torch 参数。把阈值放进结构快照，改它就必须走
+「提案 → 验证门 → Structure Store → 换快照」——于是门控的每一次变动都是
+可审计的一次版本切换，而不是一次无人知晓的原地赋值。
+
+在此之前 ``FastLoopContext.get_threshold()`` 是个**没有消费者的声明**：
+它写着"Action Decoder 的决策阈值来源"，而 Action Decoder 读的是自己的
+config。本模块补上这个消费者（Milestone 4 增量 3）。
+
 为什么本模块的输出不可微
 --------------------
 两件事合起来的结果，不是疏漏：
@@ -49,6 +64,7 @@ SSEA **不走"反向传播穿过动作"这条路**——那需要一个可微环
 from __future__ import annotations
 
 from dataclasses import dataclass
+from typing import Mapping
 
 import torch
 import torch.nn as nn
@@ -72,6 +88,13 @@ GATED_CHANNELS = ("manipulation", "communication", "memory", "skill", "self_modi
 
 #: 通道门控的开启阈值。设为可配置而非 0.5，便于实验扫描。
 DEFAULT_GATE_THRESHOLD = 0.5
+
+#: 各通道门控阈值在 ``FastLoopContext.thresholds`` 里的键名。
+#: 慢环的 Δθ（LocalPlasticity）只能通过改这些键来影响门控——参数侧更新
+#: 在第一阶段没有可验证的落点，见 SSEA/plasticity.py 的 DEFERRED_SCOPES。
+GATE_THRESHOLD_KEYS: dict[str, str] = {
+    name: f"{name}_gate_threshold" for name in GATED_CHANNELS
+}
 
 
 @dataclass(frozen=True)
@@ -173,6 +196,7 @@ class ActionDecoder(nn.Module):
         constraints: ActionConstraints,
         internal_drive: torch.Tensor,
         candidates: DecodeCandidates | None = None,
+        gate_thresholds: Mapping[str, float] | None = None,
     ) -> Action:
         """解码出一个满足约束的 Action。
 
@@ -180,6 +204,12 @@ class ActionDecoder(nn.Module):
         ——**收 constraints 而不收 body**。BodyState 里除约束外没有本模块
         需要的东西（能量 / 损伤 / 疲劳已经进了 ``internal_drive``），收一个
         只为了取其字段的参数会让签名说谎。
+
+        ``gate_thresholds`` 是**结构侧的行为策略**（``FastLoopContext.thresholds``）。
+        它是慢环 Δθ 唯一的落点：门控阈值住在结构快照里，于是改它要走
+        「提案 → 验证门 → Structure Store → 换快照」整条路，而不必让慢环
+        直接写 torch 参数（07 §16：模型不可绕过验证器应用修改）。
+        默认 None = 用 ``config.gate_threshold``，老调用点一行不用改。
         """
 
         cfg = self.config
@@ -197,7 +227,7 @@ class ActionDecoder(nn.Module):
 
         # ---- locomotion（常开）----
         direction = torch.tanh(self.loco_dir(h)).tolist()
-        speed = float(torch.sigmoid(self.loco_speed(h))) * constraints.max_speed
+        speed = float(torch.sigmoid(self.loco_speed(h))) * constraints.max_speed #UserWarning，张量转标量
         duration = float(torch.sigmoid(self.loco_dur(h))) * constraints.max_duration
         locomotion = Locomotion(
             direction=tuple(direction), speed=speed, duration=duration
@@ -211,16 +241,24 @@ class ActionDecoder(nn.Module):
             for name, layer in self.gates.items()
         }
 
+        def threshold_for(channel: str) -> float:
+            """本通道的门控阈值：结构给了就用结构的，否则退回配置值。"""
+            if gate_thresholds is None:
+                return cfg.gate_threshold
+            return float(
+                gate_thresholds.get(GATE_THRESHOLD_KEYS[channel], cfg.gate_threshold)
+            )
+
         # manipulation
         if (
-            gate_values["manipulation"] >= cfg.gate_threshold
+            gate_values["manipulation"] >= threshold_for("manipulation")
             and candidates.object_ids
         ):
             action = self._add_manipulation(action, h, constraints, candidates)
 
         # communication
         if (
-            gate_values["communication"] >= cfg.gate_threshold
+            gate_values["communication"] >= threshold_for("communication")
             and constraints.can_communicate
         ):
             signal = tuple(torch.tanh(self.comm(h)).tolist())
@@ -230,7 +268,7 @@ class ActionDecoder(nn.Module):
 
         # memory
         if (
-            gate_values["memory"] >= cfg.gate_threshold
+            gate_values["memory"] >= threshold_for("memory")
             and constraints.can_store_memory
         ):
             store = bool(torch.sigmoid(self.mem_store(h)) >= cfg.gate_threshold)
@@ -244,7 +282,7 @@ class ActionDecoder(nn.Module):
 
         # skill
         if (
-            gate_values["skill"] >= cfg.gate_threshold
+            gate_values["skill"] >= threshold_for("skill")
             and constraints.can_call_skill
             and candidates.skill_ids
         ):
@@ -257,7 +295,7 @@ class ActionDecoder(nn.Module):
 
         # self_modification
         if (
-            gate_values["self_modification"] >= cfg.gate_threshold
+            gate_values["self_modification"] >= threshold_for("self_modification")
             and constraints.can_self_modify
             and candidates.proposal_types
         ):

@@ -1,17 +1,20 @@
 # SSEA v0.3.1 项目进度报告
 
-**日期**：2026-09-27
+**日期**：2026-09-27（Milestone 4 增量 3 落地后更新）
 **判定依据**：[07-ssea-v0.3.1-charter.md](07-ssea-v0.3.1-charter.md) §11 里程碑、
 §18 完成标准、§12 验收实验；08 修订条款已并入
-**代码**：[`SSEA/`](../SSEA/)（30 个 `.py`，5939 行）；[`tests/`](../tests/)（15 个测试文件，6455 行）
-**设计文档**：[`docs/`](.)（12 篇编号文档 + 本索引 README，9429 行）
+**代码**：[`SSEA/`](../SSEA/)（33 个 `.py`，7469 行）；[`tests/`](../tests/)（18 个测试文件，8675 行）
+**设计文档**：[`docs/`](.)（14 篇编号文档 + 本索引 README）
+**定位**：对账式进度报告——回答「到哪了」。总览与路线图（「往哪走」）见
+[14-overview-and-roadmap.md](14-overview-and-roadmap.md)。
 
 ---
 
 ## 1. 一页结论
 
-**状态**：Milestone 0 / 1 / 2 / 3 已完成，Milestone 4 / 5 未开始。
-代码与测试全部就绪，**但架构有效性尚无一个实验数字**。
+**状态**：Milestone 0 / 1 / 2 / 3 已完成，Milestone 4 进行中（增量 1 验证门、
+增量 2 经验编译器、增量 3 可塑性已落地），Milestone 5 未开始。代码与测试全部就绪，
+**但架构有效性尚无一个实验数字**。
 
 07 §18 的十二条第一阶段完成标准里：
 
@@ -21,11 +24,14 @@
 未开始      4 项   （8、9、10、12）
 ```
 
-**一句话判断**：基础设施是扎实的——协议、双环、注入面、记忆、技能五块都有测试
-守着，595 项测试通过，闭环能连续跑。但「SSEA 是一个有效的生存控制架构」这句话
+**一句话判断**：基础设施是扎实的——协议、双环、注入面、记忆、技能、验证门、
+经验编译器、可塑性八块都有测试守着，737 项测试通过，闭环能连续跑，
+**慢环现在已经能自己产出提案并提交，并能按可观测症状调整自己的行为阈值**。
+但「SSEA 是一个有效的生存控制架构」这句话
 **目前没有任何证据支持**，因为 §12 的六个验收实验一条都还没跑。
 
-**下一步**：Milestone 4（慢环本体）。它是 §18 剩余七项里六项的前置条件。
+**下一步**：Milestone 4 剩余三个组件（RuleCompiler、HeritableFilter、
+Gene Manager）。执行顺序见 [13-milestone4-plan.md](13-milestone4-plan.md) §3。
 
 ---
 
@@ -34,10 +40,10 @@
 | 里程碑 | 交付物 | 状态 | 证据 |
 |---|---|---|---|
 | 0 架构冻结 | 09 原创性说明 / 10 边界表 / 11 不做清单 | ✅ 完成 | 三份文档 |
-| 1 接口协议 | 14 个协议 + Structure Store + FastLoopContext + 序列化 | ✅ 完成 | `test_serialization.py`（59 项）、`test_08_revisions.py`（55 项）、`test_structure_store.py`（31 项）、`test_protocol_consistency.py`（41 项） |
-| 2 快环骨架 | Perception Encoder / State Core / Action Decoder / Skill Runner / Environment | ✅ 完成 | `test_fast_loop.py`（54 项）等 9 个文件（297 项） |
+| 1 接口协议 | 14 个协议 + Structure Store + FastLoopContext + 序列化 | ✅ 完成 | `test_serialization.py`（59 项）、`test_08_revisions.py`（55 项）、`test_structure_store.py`（32 项）、`test_protocol_consistency.py`（41 项） |
+| 2 快环骨架 | Perception Encoder / State Core / Action Decoder / Skill Runner / Environment | ✅ 完成 | `test_fast_loop.py`（54 项）等 9 个文件（266 项） |
 | 3 记忆与技能 | Memory System / Skill Library | ✅ 完成 | `test_memory_system.py`（87 项）、`test_skill_library.py`（57 项） |
-| 4 慢环本体 | Experience Compiler / RuleCompiler / Plasticity Controller / Verification Gate / HeritableFilter | ❌ 未开始 | 只有 `SlowLoopHook` / `DeathHook` 两个空接口 |
+| 4 慢环本体 | Verification Gate ✅ / Experience Compiler ✅ / Plasticity Controller ✅ / RuleCompiler ❌ / HeritableFilter ❌ / Gene Manager ❌ | 🔄 进行中（3/6） | `test_verification_gate.py`（55 项）、`test_experience_compiler.py`（36 项）、`test_plasticity.py`（50 项）；`DeathHook` 仍默认 `None` |
 | 5 遗传原型 | Gene Manager | ❌ 未开始 | 协议只定义 `GenePackage` 字段 |
 
 > 里程碑数与 07 §11 一致；Skill Runner 是 08 §2.6 新增的第 11 个模块，
@@ -60,12 +66,12 @@
 | 4 | 动作空间不是有限字符串选择，而是混合控制空间 | ✅ | 连续（`locomotion` 速度/方向/时长）+ 离散（`manipulation.operation`）+ 参数化（力/目标/技能参数）+ 技能调用四类并存 |
 | 5 | 模型可以写入和检索记忆 | ✅ | `TestWrite`（六通道门控 / `store=False` / `writable=False` 三种「不写」可区分）；`TestRetrieve`（余弦相似度 + 槽位布局 + stride 缓存） |
 | 6 | 模型可以通过记忆改变行为 | ⚠️ 部分 | **写入与检索已通，但没有任何测试或实验证明检索结果改变了动作**。这是 §12 实验 2，未跑 |
-| 7 | 模型可以将成功行为固化为技能 | ⚠️ 部分 | `compile_from_trace` + `test_compile_from_a_real_loop_trace` 证明「轨迹进 → 技能出 → 快环调用」链路通；但**触发固化的慢环编译器不存在**，模型自己不会固化。这是 §12 实验 3，未跑 |
+| 7 | 模型可以将成功行为固化为技能 | ⚠️ 部分 | `compile_from_trace` + `test_compile_from_a_real_loop_trace` 证明「轨迹进 → 技能出 → 快环调用」链路通；增量 2 补上了**触发器**（`make_slow_loop_hook`），`test_fast_loop_sleep_compiles_a_skill` 里快环自己睡着、醒来技能库里多了一条它自己编译的技能。**但那条端到端测试靠脚本化策略**——默认随机初始化解码器从不 emit grasp，而这个世界唯一的正能量来源就是 grasp 资源。所以「模型自己学会了」仍未证明，这是 §12 实验 3，未跑 |
 | 8 | 模型可以保存基因 | ❌ | Gene Manager 未实现 |
 | 9 | 模型可以从基因恢复 | ❌ | 同上 |
 | 10 | 模型可以产生可运行变异后代 | ❌ | 同上；`mutation_rate` 作用范围已在协议层限定，但无消费者 |
-| 11 | 模型可以提出自我修改提案 | ⚠️ 部分 | `SelfModificationProposal` 协议 + Action Decoder 的 `self_modification` 通道可产出提案；但**没有 Experience Compiler 生成提案内容**，提案目前是空壳 |
-| 12 | 自我修改可以通过验证并安全回滚 | ❌ | Verification Gate 未实现。Structure Store 的「失败天然回滚」性质已有测试（`test_no_rollback_api_exists`），但那是**版本不切换**，不是**验证后拒绝** |
+| 11 | 模型可以提出自我修改提案 | ⚠️ 部分 | 增量 2 落地 ΔS（`ADD_SKILL`），增量 3 落地 Δθ（`UPDATE_THRESHOLD` / `UPDATE_RETRIEVAL_POLICY`），payload 形状均过 Gate 格式级。但 07 §6.6 列的规则 / 记忆摘要 / 参数更新三类尚未实现（各有归属增量，见 13 §3）；**参数侧 Δθ 整个推迟**，理由见 `plasticity.DEFERRED_SCOPES` |
+| 12 | 自我修改可以通过验证并安全回滚 | ⚠️ 部分 | 链已闭合：编译器产提案 → Gate 判合法性 → Store 提交或拒。「回滚」半边靠「版本号不切换」的天然回滚（`test_no_rollback_api_exists`）——被拒的提案从未被应用，没有东西需要回滚。**缺实验数字**（§12 实验 6 未跑） |
 
 ### 3.2 已实现能力及其边界
 
@@ -75,9 +81,9 @@
 
 | 层 | 能做到 | 不能做到 |
 |---|---|---|
-| 权重 | `StateCore`（GRU）+ `ActionDecoder` 各头均为标准 `nn.Module`，内部可微；`TestTrainability` 守住「学习作用点存在」 | **没有任何学习发生**。LocalPlasticity 是 Milestone 4，当前参数自初始化后不再变 |
+| 权重 | `StateCore`（GRU）+ `ActionDecoder` 各头均为标准 `nn.Module`，内部可微；`TestTrainability` 守住「学习作用点存在」 | **没有任何参数学习发生**。增量 3 的 Δθ 只动**结构侧**阈值（`thresholds` / `retrieval`），torch 参数自初始化后不再变；参数侧整个推迟，见 `plasticity.DEFERRED_SCOPES` |
 | 记忆 | 写入 / 向量检索 / 重要度排序 / 容量限制 / 记忆合并 / 可继承判定六项齐全；策略来自不可变快照 | 记忆**不被任何机制读取后用于决策**——`m_t` 进了 State Core，但没有证据表明它改变了输出 |
-| 技能 | 从成功轨迹编译 / 提案过门 / 淘汰 / 继承；端到端可被快环真实调用 | 模型**不会自己决定何时编译技能**；技能库当前由外部填充 |
+| 技能 | 从成功轨迹编译 / 提案过门 / 淘汰 / 继承；端到端可被快环真实调用 | 模型**不会自己决定何时编译技能**——睡眠期钩子虽已接上，但默认随机初始化的策略产生不了可编译的成功段 |
 
 **双环与结构注入面**
 
@@ -86,8 +92,30 @@
 `StructureStore` 上**没有** rollback / revert / undo / restore 方法——被驳回的
 提案从未被应用，所以没有东西需要回滚。
 
-不能做到：慢环**没有本体**。`SlowLoopHook` 与 `DeathHook` 两个钩子默认 `None`，
-睡眠期只恢复身体，不整理经验。这是 Milestone 3 与 4 之间的刻意留白。
+**提案可以过门了**（增量 1）：`VerificationGate.check(proposal, snapshot)`
+返回 `GateResult`，`StructureStore.commit(proposal, result, timestamp)` 内部
+分流——通过则版本号按类别递增，拒绝则记一条 `applied=False` 的审计项，
+**不抛异常、不改版本号**。慢环因此可以写成一条直线，不需要 try/except
+包住拒绝路径。
+
+**提案有生产者了**（增量 2）：`ExperienceCompiler.compile(trace)` 吃一条轨迹，
+吐 `ADD_SKILL` 提案；`run_slow_loop(trace, store, gate)` 把「编译 → 过门 →
+提交」接成一步，`make_slow_loop_hook(store, gate)` 直接可传给
+`FastLoop(slow_loop=...)`。于是 07 §18 第 7 项缺的那半条——**触发器**——补上了。
+
+编译器刻意只做一件事：**提什么**。它不提交（那是 Store 的事）、不评估提案好坏
+（与 Gate 同一条 C9 纪律）、不自己发明切分规则（复用 `skill_library.compile_skills`）。
+
+**Δθ 也有生产者了**（增量 3）：`LocalPlasticity.observe(trace)` 给出纯读的症状
+诊断（三种帧类别可区分：门没开 / 门开了但决定不记 / 记了），`propose(trace, structure)`
+按症状提提案。`PlasticityController` 持有 `allowed_scope`——**白名单**，
+未登记边界的键不可改，且 07 §6.7 的不可更新清单**先于**白名单匹配。
+
+两条规则都能沉默：症状都不成立时一条提案都没有。`TestNotTautological` 用四种
+独立的方式证它会沉默（无 RUN 帧 / 路径正常 / 已在边界 / 证据不足）。
+
+不能做到：慢环**只有一步**。`DeathHook` 仍默认 `None`（死亡快照未接），
+ΔR / ΔM 两类提案还没有生产者。这是 Milestone 4 与 5 之间的刻意留白。
 
 **生命周期**
 
@@ -112,12 +140,16 @@
 
 | 指标 | 数值 | 怎么来的 |
 |---|---|---|
-| 测试通过 | **595 passed, 1 skipped** | `python -m pytest tests/ -q`；skip 是 `StructureStore` 非 dataclass 的主动跳过 |
-| 测试覆盖 | 15 个测试文件，6455 行（约为代码的 1.09 倍） | 不含 `conftest.py` |
+| 测试通过 | **737 passed, 1 skipped** | `.venv/Scripts/python.exe -m pytest tests/ -q`；skip 是 `StructureStore` 非 dataclass 的主动跳过 |
+| 顺序不变性 | **15 个随机 seed 下均为 737 passed / 1 skipped** | `pytest-randomly` 已装入 `.venv` 与系统 python（见 [requirements.txt](../requirements.txt)）；本次实测 15 seed |
+| 测试覆盖 | 18 个测试文件，8675 行（约为代码的 1.16 倍） | 不含 `conftest.py` |
 | 协议序列化 | 14 个协议全部 JSON 往返保真 | `test_serialization.py` |
 | 协议层 ML 依赖 | **0** | `TestNoModelDependency` 正向守卫 + `test_model_layer_does_import_torch` 反向守卫 |
 | 连续闭环 | 40 帧无崩溃，记忆读写合并全链路可见 | 见 §7 复现脚本 |
-| 顺序不变性 | 正序 / 逆序 / 按文件大小降序三种排布下均为 595 passed | 见 §6 债务 2 |
+| 慢环一步 | 编译 → 过门 → 提交，合法提案版本号 `skills@v0→v1`，拒绝则版本号不动 | `test_experience_compiler.py::TestSlowLoopStep` |
+| 端到端睡眠编译 | 1 个真快环睡过去，醒来技能库多 1 条技能；后续每次睡眠 0 条新提案 | `TestSleepActuallyCompiles`（脚本化策略，见下） |
+| **阈值自修正** | 8 个 seed × 25 帧强制睡眠一次，记忆门开启率均值 **0.280 → 1.000** | `TestAcceptance`；6/8 提案一步，2/8 沉默（本就 1.000） |
+| `thresholds` 首次提交 | `thresholds@v0 → v1`，门控阈值经四级检查后真的被装上 | 增量 3 落地结果，见 13 §6.4 |
 
 **一条真实运行的输出**（seed 固定为 0）：
 
@@ -131,6 +163,17 @@ events : 16
 
 40 帧里写入 40 条记忆、检索命中 39 次、合并 24 次。记忆系统**在工作**。
 
+**一条慢环一步的真实输出**（增量 2，`run_slow_loop` 端到端）：
+
+```
+applied  : 1  rejected=0
+versions : {'skills': 1, 'rules': 0, 'adapters': 0, 'thresholds': 0, 'retrieval': 0}
+audit    : exp-sk_14b26f6a2a skills 0→1 pass
+skill    : seq:5f:energy_gain frames=5 energy_change=+1.0 outcome=energy_gain
+```
+
+提案 id 里直接带着技能 id——审计日志不必翻 payload 就知道这条提案是关于哪条技能的。
+
 ### 4.2 尚无数字
 
 §12 的六个验收实验，**一条都没有跑过**。它们的验收指标目前全部为空：
@@ -138,15 +181,15 @@ events : 16
 | 实验 | 要证明什么 | 指标 | 现状 |
 |---|---|---|---|
 | 1 非语言闭环 | 不用自然语言能运行 | 连续运行步数 / 动作合法率 / 接口异常率 / 是否出现语言控制路径 | 部分可由测试推断，未系统测量 |
-| 2 记忆召回 | 可以通过外部记忆改变行为 | 记忆写入成功率 / 检索命中率 / **危险回避率** | 未跑。**这是最关键的一条** |
-| 3 技能固化 | 可以将成功行为固化为技能 | 技能生成数量 / 调用成功率 / **能量消耗变化** | 未跑。缺慢环触发器 |
+| 2 记忆召回 | 可以通过外部记忆改变行为 | 记忆写入成功率 / 检索命中率 / **危险回避率** | 未跑。**这是最关键的一条**。现在有了**两个对照组**：`ZeroMemoryRetriever`（记忆关掉）与 Δθ（记忆从未被打开）——前者证明检索无贡献，后者证明「没开过」不是「开了没用」 |
+| 3 技能固化 | 可以将成功行为固化为技能 | 技能生成数量 / 调用成功率 / **能量消耗变化** | 未跑。触发器已就绪，但默认随机策略产生不了可编译的成功段 |
 | 4 基因保存恢复 | 具有生命周期能力 | 保存成功率 / 恢复成功率 / 技能继承率 / 行为一致性 | 未跑。缺 Gene Manager |
 | 5 变异 | 能产生可运行后代 | 变异成功率 / 子代可运行率 / 差异可追踪性 | 未跑。缺 Gene Manager |
-| 6 安全自我修改 | 自我修改可控 | 提案数量 / 验证通过率 / 失败回滚率 / 核心系统未被破坏率 | 未跑。缺 Verification Gate |
+| 6 安全自我修改 | 自我修改可控 | 提案数量 / 验证通过率 / 失败回滚率 / 核心系统未被破坏率 | 未跑。Gate 与提案生产者（ΔS 与 Δθ）**都已就绪**，可以开跑 |
 
 ### 4.3 一个必须说清的区分
 
-**595 项测试通过，证明的是工程质量，不是架构有效性。**
+**737 项测试通过，证明的是工程质量，不是架构有效性。**
 
 它证明的是：协议自洽、序列化保真、约束不被违反、注入面四条性质成立、
 记忆与技能的机制按设计工作。它**不**证明：这个架构比别的架构更省算力、
@@ -168,23 +211,56 @@ stats : MemoryStats(frames=40, retrievals=40, hits=0, misses=40,
 时，记忆通路有约一半概率完全不激活**。任何关于记忆的实验，若不先固定 seed 或
 先训练门控，结论都是抽奖。
 
+#### 增量 3 之后：解药有了，但默认配置下吃不到
+
+增量 3（Plasticity Controller + LocalPlasticity）给出了解药：慢环在睡眠期观察
+「值得记的帧上门从没开过」这个症状，据此下调 `memory_gate_threshold`，提案经四级
+Gate 后提交。实测（8 seed × 25 帧，强制睡眠一次）均值 **0.280 → 1.000**，
+6/8 seed 恰好提案一步，2/8 因本就是 1.000 而沉默——**沉默是对的**，
+每次都提的规则不配叫修正。
+
+但有三条必须说清的保留，否则这个数字会被读错：
+
+1. **它需要一次睡眠，而默认世界不给睡眠。** 实测默认 `MetabolicMonitor`
+   8 个 seed：全部在 64–69 帧死亡，`sleeps=0`，`proposals=0`。也就是说
+   0.280 → 1.000 这个数字是在**病理监控器**下测得的（把睡眠阈值压到 0），
+   默认配置下这条通路一次都没被走过。机制被证明了，可达性没有。
+   §12 实验 2 若要跑，得先决定睡眠由谁触发——这是下一个真实的前置。
+
+2. **它是一个钝器，不是一把选择性的闸门。** 门控值由随机权重决定，
+   240 个采样里 min 0.463 / 中位 0.487 / max 0.530——几乎是个常数。
+   阈值 0.5 正好落在分布中间，所以约一半 seed 打不开。
+   全局阈值这个杠杆只能把门**全开**，做不到「惊奇帧开、平淡帧关」。
+   **选择性需要参数侧 Δθ，而参数侧被 07 §16 整体推迟了**
+   （权重增量递不进 Gate 第四级，硬塞进 `UPDATE_ADAPTER`
+   会让「经过验证门」这句话变成假话）。所以现状是：
+   **「门控不开」修好了，「门开得准不准」是下一步的事。**
+
+3. **没有棘轮。** 修正前这条规则会一路把阈值推到下界 0.15
+   （第二轮睡眠的触发证据全部来自第一轮之前）。增量 3 用
+   `context_fingerprint` 切了证据窗口，只统计当前结构版本产出的帧，
+   于是症状消失后规则自动沉默——`TestConvergesOnce` 守的就是这个不动点。
+
 ---
 
 ## 5. 还有什么需要做
 
 ### 5.1 Milestone 4：慢环本体
 
-| 交付物 | 要解决的问题 | 依赖 |
-|---|---|---|
-| Experience Compiler | §18 第 7、11 项：把 trace 编译成技能与提案，让模型**自己**触发固化 | Milestone 3 的 trace / 提案机制已备齐 |
-| RuleCompiler | 无触发器；产出 `RuleProposal` | 同上 |
-| Plasticity Controller | 门控与 adapter 的局部更新；**同时是 §4.3 那个「零写入」问题的解药** | 需要 trace + `Feedback.prediction_error` |
-| Verification Gate | §18 第 12 项：格式 → 沙盒 → 回归 → 小范围环境测试 | `SelfModificationProposal` 协议已有 |
-| HeritableFilter | `MemoryItem.is_heritable()` 的消费者，判据已实现但无消费者 | Milestone 3 的判据与测试已有 |
-| Gene Manager（save/load） | §18 第 8、9 项 | 可独立于上面五项 |
+| 交付物 | 要解决的问题 | 依赖 | 状态 |
+|---|---|---|---|
+| Experience Compiler | §18 第 7、11 项：把 trace 编译成技能与提案，让模型**自己**触发固化 | Milestone 3 的 trace / 提案机制已备齐 | ✅ 增量 2 |
+| Verification Gate | §18 第 12 项：格式 → 沙盒 → 回归 → 小范围环境测试 | `SelfModificationProposal` 协议已有 | ✅ 增量 1 |
+| Plasticity Controller + LocalPlasticity | 门控的局部更新；**同时是 §4.3 那个「零写入」问题的解药**（结构侧） | 需要 trace + `Feedback.prediction_error` | ✅ 增量 3 |
+| RuleCompiler | 无触发器；产出 `RuleProposal` | 同上 | ❌ 下一步 |
+| HeritableFilter | `MemoryItem.is_heritable()` 的消费者，判据已实现但无消费者 | Milestone 3 的判据与测试已有 | ❌ |
+| Gene Manager（save/load） | §18 第 8、9 项 | 可独立于上面五项 | ❌ |
+| `DeathHook` 接线 | 死亡前最终编译 + 基因快照（08 §4.2 的 DEATH_SNAPSHOT 触发器） | 依赖 Gene Manager 与上面的提案链路 | ❌ |
 
 **验收**（07 §11）：模型可以从成功轨迹中生成技能 / 模型可以提出修改提案 /
-修改可以验证和回滚。
+修改可以验证和回滚。三项**机制上已全部满足**——生成技能与提出提案由增量 2
+（ΔS）与增量 3（Δθ）负责，验证由增量 1 负责，回滚靠「版本号不切换」的天然回滚
+（见 §3.2）。剩下的全部是**实验数字**（§4.2），不是实现缺口。
 
 ### 5.2 Milestone 5：遗传原型
 
@@ -192,6 +268,12 @@ Gene Manager 的 mutate + 继承。**验收**：模型可以保存基因 / 可�
 可以产生可运行变异后代。前置是 Milestone 4 的 Gene Manager save/load。
 
 ### 5.3 建议执行顺序
+
+> **本节排序有误，已作废**，见 [13-milestone4-plan.md](13-milestone4-plan.md) §1。
+> 错误在于把「解门控不开这个问题最直接」当成了排序依据，但那是**价值判断**，
+> 不是**依赖判断**。正确顺序按依赖定：Verification Gate → Experience Compiler →
+> Plasticity Controller → RuleCompiler → HeritableFilter → Gene Manager。
+> 下面原文保留，作为判断出错的记录。
 
 慢环的五个组件不是并列的，有明确的前后：
 
@@ -211,16 +293,22 @@ Gene Manager 的 mutate + 继承。**验收**：模型可以保存基因 / 可�
 §12 实验 2（记忆召回）可以在第 1 步之后立即开跑，不必等慢环完工——它是
 验证 Plasticity 是否真的让记忆影响了行为的直接指标。
 
+> **更正**：这一句原先写于增量 3 之前，当时预期「Plasticity 落地 → 实验 2 开跑」。
+> 增量 3 落地后的实测表明这个预期**只对了一半**：Plasticity 确实让门从
+> 「~一半 seed 完全不开」变成「可自修正」（0.280 → 1.000），但它是**全局阈值**，
+> 只证明「门开了」，不证明「记忆改变了行为」；而且默认世界 0 睡眠，
+> 这条通路默认走不到（§4.3 保留 1）。实验 2 要开跑，先得决定睡眠由谁触发。
+
 ### 5.4 §12 六实验的执行前提
 
-| 实验 | 前置 |
-|---|---|
-| 1 非语言闭环 | 已可跑，缺系统测量 |
-| 2 记忆召回 | Plasticity Controller（否则记忆写入是抽奖） |
-| 3 技能固化 | Experience Compiler |
-| 4 基因保存恢复 | Gene Manager save/load |
-| 5 变异 | Gene Manager mutate |
-| 6 安全自我修改 | Verification Gate |
+| 实验 | 前置 | 现状 |
+|---|---|---|
+| 1 非语言闭环 | 已可跑，缺系统测量 | 未跑 |
+| 2 记忆召回 | Plasticity Controller（否则记忆写入是抽奖） | **增量 3 已落地**：门控可自修正（0.280 → 1.000），但需睡眠触发；默认世界不睡眠，开跑前要先定睡眠触发器 |
+| 3 技能固化 | Experience Compiler | **触发器已就绪**，等默认策略能产出可编译的成功段 |
+| 4 基因保存恢复 | Gene Manager save/load | 未跑 |
+| 5 变异 | Gene Manager mutate | 未跑 |
+| 6 安全自我修改 | Verification Gate + Experience Compiler | **两者都已就绪**，可以开跑 |
 
 ---
 
@@ -231,16 +319,25 @@ Gene Manager 的 mutate + 继承。**验收**：模型可以保存基因 / 可�
 **1. 记忆门控未训练——「看起来完成了，其实没生效」**
 随机初始化下约一半概率零写入（§4.3 实测）。任何未固定 seed 的记忆实验结论都是
 抽奖。**这是当前最大的风险**，因为它让 Milestone 3 的成果在默认配置下不可观测。
-解药是 Milestone 4 的 Plasticity Controller；在那之前，实验必须固定 seed。
+~~解药是 Milestone 4 的 Plasticity Controller；在那之前，实验必须固定 seed。~~
+**部分解决**（2026-09-27，增量 3）：`LocalPlasticity` 能在睡眠期观察到
+「值得记的帧上门从没开过」并下调阈值，实测均值 0.280 → 1.000。
+**仍未解决的部分见 §4.3 三条保留**——最要紧的是默认世界 0 睡眠
+（实测 8 seed 全部 64–69 帧死亡，`sleeps=0`），所以这条通路默认走不到；
+以及选择性（惊奇帧开、平淡帧关）需要被 07 §16 推迟的参数侧 Δθ。
+在那之前，实验仍应固定 seed。
 
 **2. `pytest-randomly` 未安装——顺序不变性无自动保障**
-README 曾声称测试套件启用了该插件，实际系统 Python 与 `.venv` 里都没装，
-项目也没有 `requirements.txt` / `pyproject.toml` 声明它。已改文档为如实描述。
-正序 / 逆序 / 按文件大小降序三种排布下均为 595 passed，但这是手工验的，
-不是每次跑都验。**建议**：补一份 `requirements.txt`（至少含 `pytest`、`torch`、`pytest-randomly`）。
+~~README 曾声称测试套件启用了该插件，实际系统 Python 与 `.venv` 里都没装，
+项目也没有 `requirements.txt` / `pyproject.toml` 声明它。~~
+**已解决**（2026-09-27）：用户装入 `.venv`，`requirements.txt` 已补，
+15 个 seed 下均为 737 passed / 1 skipped（本次实测）。顺序不变性**现在有
+自动守卫**。`python` 与 `.venv/Scripts/python.exe` **都已装有**
+pytest-randomly 5.0.0，两个解释器跑出来一致。
 
 **3. §12 六实验零数字——架构有效性无证据**
 见 §4.2。这是 Milestone 4/5 之后必须补的，否则项目无法回答「这到底有没有用」。
+增量 2 之后，实验 6（安全自我修改）的前置已全部就绪，可以第一个跑。
 
 **4. `retrieve` 键收窄——召回精度上限更低**
 08 §4.1 写 `retrieve(p_t, h_{t-1})`，实现收窄为 `retrieve(p_t)`，理由是继承来的
@@ -252,24 +349,73 @@ Milestone 4 若发现检索不够用，正确方向是换更强的键函数，�
 没有输入依据；现在记忆系统落地了，这个留待项有了前提。
 
 **6. 睡眠期只恢复身体，不整理经验**
-慢环钩子默认 `None`。这是刻意的，但它意味着当前「睡眠」在功能上只是疲劳恢复。
+~~慢环钩子默认 `None`。这是刻意的，但它意味着当前「睡眠」在功能上只是疲劳恢复。~~
+**已解决**（2026-09-27）：增量 2 的 `make_slow_loop_hook` 接上了 `SlowLoopHook`，
+睡眠末尾真的会编译 → 过门 → 提交。剩下的 `DeathHook` 仍默认 `None`（死亡快照未接）。
+
+**6b. 默认世界上没有可学的成功——端到端测试必须脚本化策略**
+增量 2 的端到端测试（`TestSleepActuallyCompiles`）靠一个手写策略才跑通，
+原因是两件事叠在一起：默认 Action Decoder 随机初始化，从不 emit grasp；
+而这个世界里**唯一的正能量来源就是 grasp 资源**（`resource_gain`，
+且能量上限 1.0 而 agent 开局就满）。于是默认配置下慢环跑一万帧也编译不出
+任何东西。
+
+这不是编译器的缺陷——是世界还没给出可学的成功。但它是一条要紧的债务：
+**在默认策略能产出可编译的成功段之前，「模型自己学会了」这句话没有证据。**
+~~解药可能是 Plasticity Controller（增量 3），也可能是换一个非随机初始化的
+默认解码器。~~ 增量 3 落地后确认：**不是这条债务的解药**。
+`LocalPlasticity` 只动结构侧阈值（`memory_gate_threshold` /
+`min_similarity`），而默认策略不 emit grasp 与阈值无关——
+阈值决定「记不记」，不决定「抓不抓」。解药只能是换一个非随机初始化的
+默认解码器，或让世界给出除 grasp 之外的正反馈。
+测试里脚本化策略、压低 `resource_gain`、资源簇零危险源
+三项调整的理由记录在 [13-milestone4-plan.md](13-milestone4-plan.md) §5.4。
+
+**7. `UPDATE_RETRIEVAL_POLICY` 曾写入下游读不懂的形状（已修）**
+Milestone 1 的 `StructureStore._apply` 写 `nxt[target] = policy`，而 `retrieval`
+实际是**一份扁平策略**（键即策略字段名），不是 name→policy 的映射。于是提交后
+`retrieval` 变成 `{"default": {"top_k": 8}}`，`MemorySystem` 把整个映射交给
+`validate_retrieval_policy`，读到未知键 `"default"` 直接 `ValueError`——
+**快环在下一个 `WAKE` 上崩**。
+
+这条 bug 在 Milestone 1–3 全程不可见，因为**没有任何机制真的去读提交后的
+retrieval**：`test_structure_store.py` 只断言版本号递增，而构造 MemorySystem
+的测试用的是手写的扁平 `retrieval`。它是被 Verification Gate 逼出来的——
+第四级要把候选结构装配成快环跑一遍，畸形形状无处躲藏。
+
+已修（`_apply` 改为 `nxt[target] = policy`，与 `UPDATE_THRESHOLD` 同形），
+并加了两条回归钉子。**教训值得记下**：Store 只管版本号与审计，不保证下游读得懂；
+这个洞要么由消费者侧的测试堵，要么由 Gate 这样的端到端检查堵。
+
+**8. `action_decoder.py` 的 requires_grad UserWarning（不修，已判定无影响）**
+`float(torch.sigmoid(self.loco_speed(h)))` 把 requires_grad 张量转标量，
+torch 发 UserWarning（`tests/test_perception_encoder.py:167` 有同类）。
+**判定：不影响开发，不修。** 理由：Action 边界**刻意不可微**
+（`SSEA/README.md` §5.2），现有可微性测试都直接调内部头（`trunk` / `loco_speed`）
+而不经 `forward`，包 `no_grad()` 不改变任何可观测行为。留着它，直到有人要给
+Action 路径接梯度——那应该是 v0.4+ 的事，且要先回答「为什么需要一个可微的
+动作边界」。
 
 ---
 
 ## 7. 复现方式
 
 ```bash
-# 全套测试（595 passed, 1 skipped）
-python -m pytest tests/ -q
+# 全套测试（737 passed, 1 skipped）。
+# python 与 .venv/Scripts/python.exe 都已装 pytest-randomly 5.0.0，两个解释器一致。
+.venv/Scripts/python.exe -m pytest tests/ -q
 
 # 单个模块
-python -m pytest tests/test_memory_system.py -q     # 87 passed
-python -m pytest tests/test_skill_library.py -q     # 57 passed
+.venv/Scripts/python.exe -m pytest tests/test_experience_compiler.py -q  # 36 passed
+.venv/Scripts/python.exe -m pytest tests/test_verification_gate.py -q   # 55 passed
+.venv/Scripts/python.exe -m pytest tests/test_memory_system.py -q       # 87 passed
+.venv/Scripts/python.exe -m pytest tests/test_skill_library.py -q       # 57 passed
+.venv/Scripts/python.exe -m pytest tests/test_plasticity.py -q          # 50 passed
 
-# 顺序不变性（pytest-randomly 未装，手工验）
-python -m pytest $(ls tests/test_*.py) -q       # 正序（字母）
-python -m pytest $(ls -r tests/test_*.py) -q    # 逆序
-python -m pytest $(ls -S tests/test_*.py) -q    # 按文件大小降序，第三种排布
+# 顺序不变性：15 个随机 seed 下都必须通过（不只默认顺序）
+for i in $(seq 0 14); do
+  .venv/Scripts/python.exe -m pytest tests/ -q --randomly-seed=$i
+done
 ```
 
 **跑一次真实闭环**（§4.1 那段输出的来源，需在仓库根目录执行）：
@@ -293,6 +439,79 @@ print(loop.memory.stats)
 
 > `torch.manual_seed(0)` 那一行不是可选的装饰。去掉它重跑几次，会看到
 > `writes` 在 40 和 0 之间跳。
+
+**跑一次慢环一步**（§4.1 那段慢环输出的来源）：
+
+```python
+from SSEA.experience_compiler import make_slow_loop_hook, run_slow_loop
+from SSEA.sse_protocols.structure_store import StructureStore
+from SSEA.verification_gate import GateConfig, VerificationGate
+from tests.test_experience_compiler import successful_trace
+
+store = StructureStore()
+out = run_slow_loop(successful_trace(), store,
+                    VerificationGate(GateConfig(env_frames=8)), timestamp=1.0)
+print(out.applied, out.rejected, store.versions)
+for r in store.audit_log():
+    print(r.proposal_id, r.kind, f"{r.from_version}→{r.to_version}", r.gate_result)
+```
+
+**复现增量 3 的阈值自修正**（§4.1 那行 0.280 → 1.000 的来源）：
+
+```python
+import torch, statistics
+from SSEA.environment import Environment
+from SSEA.fast_loop import FastLoop, FastLoopConfig, STATE_RUN
+from SSEA.metabolic_monitor import MetabolicMonitor
+from SSEA.experience_compiler import make_slow_loop_hook
+from SSEA.plasticity import LocalPlasticity
+from SSEA.sse_protocols.structure_store import StructureStore
+from SSEA.verification_gate import GateConfig, VerificationGate
+from tests.conftest import make_context
+
+def once_at(n):
+    """只在第 n 次询问时同意睡眠一次——真实监控器不会每帧都同意。"""
+    inner = MetabolicMonitor(sleep_energy_threshold=0.0,
+                             sleep_threat_threshold=1.1, sleep_fatigue_threshold=0.0)
+    fired, asked = [False], [0]
+    class OnceAt:
+        def drive_vector(self, body): return inner.drive_vector(body)
+        def observe(self, obs): return inner.observe(obs)
+        def wants_sleep(self, body, obs):
+            asked[0] += 1
+            if fired[0]: return False
+            if asked[0] >= n and inner.wants_sleep(body, obs):
+                fired[0] = True; return True
+            return False
+        def reset(self): inner.reset()
+    return OnceAt()
+
+def measure(seed, frames=25):
+    torch.manual_seed(seed)
+    store = StructureStore()
+    hook = make_slow_loop_hook(store, VerificationGate(GateConfig(env_frames=8)),
+                               plasticity=LocalPlasticity())
+    loop = FastLoop(Environment(seed=seed), make_context(),
+                    metabolic_monitor=once_at(frames),
+                    config=FastLoopConfig(max_frames=4*frames, min_sleep_frames=3),
+                    slow_loop=hook)
+    loop.run(frames)
+    pre = [r for r in loop.trace() if r.state == STATE_RUN]
+    before = sum(1 for r in pre if r.decoded_action.memory is not None) / len(pre)
+    while loop.alive and loop.state != STATE_RUN: loop.step()
+    loop.run(frames)
+    run = [r for r in loop.trace() if r.state == STATE_RUN]
+    post = [r for r in run if r.context_fingerprint == run[-1].context_fingerprint]
+    after = sum(1 for r in post if r.decoded_action.memory is not None) / len(post)
+    return before, after, len(store.audit_log()), \
+           store.snapshot().thresholds.get("memory_gate_threshold")
+
+res = [measure(s) for s in range(8)]     # 0.280 → 1.000，6/8 提案，0.5 → 0.4
+```
+
+> 这里的 `once_at` 是**病理监控器**：它把睡眠同意条件压到只在第 25 帧成立一次。
+> 换成默认 `MetabolicMonitor()` 重跑同一个 `measure`，8 个 seed 全部 `sleeps=0`、
+> `proposals=0`、agent 在 64–69 帧死亡——**这条通路默认走不到**，见 §4.3 保留 1。
 
 ---
 

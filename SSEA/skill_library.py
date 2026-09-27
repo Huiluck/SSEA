@@ -165,12 +165,12 @@ class SkillLibrary:
 
         只编译**直接解码**出来的动作：``executed_action is decoded_action``。
         技能执行中的子动作不参与编译，否则会把已有技能抄一份。
+
+        本方法委托给模块级 ``compile_skills``——Milestone 4 的 Experience
+        Compiler 要用同一份切分规则，而不该为了复用它去持有一个 Store。
         """
 
-        out: list[Skill] = []
-        for chunk, total in _segments(trace, self.config):
-            out.append(self._skill_for(chunk, total))
-        return tuple(out)
+        return compile_skills(trace, self.config)
 
     def new_skills(
         self, candidates: Iterable[Skill]
@@ -356,39 +356,60 @@ class SkillLibrary:
         return record
 
     def _skill_for(self, chunk: Sequence[StepRecord], total: float) -> Skill:
-        """一段成功轨迹 → 一条技能。"""
+        """一段成功轨迹 → 一条技能。委托给模块级同名函数。"""
 
-        first, last = chunk[0], chunk[-1]
-        sequence = tuple(rec.executed_action for rec in chunk)
-        precondition = {"min_energy": round(first.observation.body.energy, 6)}
-        signature = _signature(sequence, precondition)
-        outcome = _outcome_marker(last.feedback)
-        return Skill(
-            skill_id=f"sk_{signature[:10]}",
-            name=f"seq:{len(sequence)}f:{outcome}",
-            precondition=precondition,
-            action_sequence=sequence,
-            expected_outcome={
-                "energy_change": round(total, 6),
-                "frames": len(sequence),
-                "outcome": outcome,
-            },
-            success_count=0,
-            failure_count=0,
-            # 每帧**毛**成本：各帧能量损失的均值（净收益为正的帧计 0）。
-            # Skill Runner 的中止判据按"剩余帧数 × 每帧成本"算，要的是
-            # 这条技能每帧烧多少，不是这段轨迹净赚多少。
-            #
-            # 刻意不用 ``max(0, -total) / n``：净收益为正的段会被它钳成 0，
-            # 于是每条编译出来的技能 energy_cost 恒为 0——一个永远为 0 的
-            # 字段就是死字段，而「协议不容无消费者的通道」这条纪律对字段
-            # 同样成立（08 §2.4）。
-            energy_cost=round(_gross_per_frame_cost(chunk), 6),
-            created_from=SOURCE_COMPILED,
-            # 从未作为技能被调用过。行为发生过，但那是轨迹，不是这次调用。
-            last_used=0.0,
-            metadata={"signature": signature},
-        )
+        return _skill_for(chunk, total)
+
+
+def compile_skills(
+    trace: Sequence[StepRecord], config: SkillLibraryConfig | None = None
+) -> tuple[Skill, ...]:
+    """轨迹 → 技能候选。**纯函数**：不碰 Store，不提提案。
+
+    ``SkillLibrary.compile_from_trace`` 与 Milestone 4 的
+    ``ExperienceCompiler`` 共用这一份实现。写成两份必然漂移，而漂移的表现是
+    「同一条轨迹编译出两条不同的技能」——那种不一致在任何运行时报错里都看不见，
+    只会在审计日志里表现为两条语义相同的提案。
+    """
+
+    cfg = config or SkillLibraryConfig()
+    return tuple(_skill_for(chunk, total) for chunk, total in _segments(trace, cfg))
+
+
+def _skill_for(chunk: Sequence[StepRecord], total: float) -> Skill:
+    """一段成功轨迹 → 一条技能。"""
+
+    first, last = chunk[0], chunk[-1]
+    sequence = tuple(rec.executed_action for rec in chunk)
+    precondition = {"min_energy": round(first.observation.body.energy, 6)}
+    signature = _signature(sequence, precondition)
+    outcome = _outcome_marker(last.feedback)
+    return Skill(
+        skill_id=f"sk_{signature[:10]}",
+        name=f"seq:{len(sequence)}f:{outcome}",
+        precondition=precondition,
+        action_sequence=sequence,
+        expected_outcome={
+            "energy_change": round(total, 6),
+            "frames": len(sequence),
+            "outcome": outcome,
+        },
+        success_count=0,
+        failure_count=0,
+        # 每帧**毛**成本：各帧能量损失的均值（净收益为正的帧计 0）。
+        # Skill Runner 的中止判据按"剩余帧数 × 每帧成本"算，要的是
+        # 这条技能每帧烧多少，不是这段轨迹净赚多少。
+        #
+        # 刻意不用 ``max(0, -total) / n``：净收益为正的段会被它钳成 0，
+        # 于是每条编译出来的技能 energy_cost 恒为 0——一个永远为 0 的
+        # 字段就是死字段，而「协议不容无消费者的通道」这条纪律对字段
+        # 同样成立（08 §2.4）。
+        energy_cost=round(_gross_per_frame_cost(chunk), 6),
+        created_from=SOURCE_COMPILED,
+        # 从未作为技能被调用过。行为发生过，但那是轨迹，不是这次调用。
+        last_used=0.0,
+        metadata={"signature": signature},
+    )
 
 
 # ----------------------------------------------------------------------

@@ -1,0 +1,36 @@
+# SSEA v0.3.1 运行与测试环境
+#
+# 依赖面极小，这是架构立场的一部分：协议层（sse_protocols/）零第三方导入，
+# 模型层只依赖 torch。安装：
+#
+#     python -m venv .venv
+#     .venv/Scripts/pip install -r requirements.txt      # Windows
+#     .venv/bin/pip install -r requirements.txt          # Linux / macOS
+#
+# 已验证环境（2026-09-27，595 passed / 1 skipped）：
+#     Python        3.12.10
+#     torch         2.14.0+cu132
+#     pytest        9.1.1
+#     pytest-randomly 5.0.0
+
+# --- 生产代码依赖 -------------------------------------------------------
+# 唯一一个。SSEA/sse_protocols/ 协议层不 import torch（由
+# tests/test_serialization.py::TestNoModelDependency 正向守卫，
+# test_model_layer_does_import_torch 反向守卫）。
+# torch 的 CUDA 构建与本机显卡相关，到 pytorch.org 按机型选装即可，
+# 此处不锁版本号。
+torch
+
+# --- 测试依赖 -----------------------------------------------------------
+pytest
+
+# 顺序不变性的自动守卫：随机化测试顺序后重跑。项目里有若干测试用
+# torch.randn 从全局 RNG 取数，且夹具是随机初始化的——不随机化就发现不了
+# 顺序依赖。曾有一条测试（test_action_decoder.py::
+# test_target_comes_from_candidates）在顺序翻转时报「通道从未开启」。
+pytest-randomly
+
+# --- 明确不需要 ---------------------------------------------------------
+# numpy          —— torch 自己会带进来；本项目不直接 import。
+# torchvision    —— 无视觉输入，第一阶段不用（见 docs/11 不做清单）。
+# 任何 LLM / 向量数据库 / 训练框架 —— 见 docs/07 §13.2「第一阶段不推荐」。

@@ -89,7 +89,12 @@ class TestVersioning:
             ("ADD_RULE", "r1", {"rule": {"if": "energy<0.2", "then": "flee"}}),
             ("UPDATE_RULE", "r1", {"rule": {"if": "a", "then": "b"}}),
             ("UPDATE_THRESHOLD", "caution", {"value": 0.7}),
-            ("UPDATE_RETRIEVAL_POLICY", "default", {"policy": {"top_k": 8}}),
+            # retrieval 是**一份扁平策略**（键即策略字段名），所以 target 是策略
+            # 键名、policy 是它的新值——与 UPDATE_THRESHOLD 同形。写
+            # ("default", {"policy": {"top_k": 8}}) 会产出 retrieval["default"]，
+            # 而 MemorySystem 把整个映射当策略读，见到未知键 "default" 就 ValueError。
+            # 见 tests/test_verification_gate.py 的回归钉子。
+            ("UPDATE_RETRIEVAL_POLICY", "top_k", {"policy": 8}),
             ("UPDATE_ADAPTER", "instinct_1", {"adapter": b"\x01\x02"}),
         ],
     )
@@ -110,6 +115,31 @@ class TestVersioning:
         assert rec.applied
         assert rec.from_version == 0
         assert rec.to_version == 1
+
+    def test_committed_retrieval_policy_is_readable_downstream(self) -> None:
+        """提交后的检索策略，MemorySystem 必须读得懂。
+
+        Store 只负责版本号与审计，**不负责下游读得懂**——但「过审的提案让
+        闭环在下一个 WAKE 上崩」是必须被堵住的洞。这条测试把堵洞的责任钉在
+        Store 自己身上：它产出的快照，消费方要能直接用。
+        """
+
+        from SSEA.memory_system import MemoryConfig, MemorySystem
+
+        store = StructureStore()
+        store.commit(
+            SelfModificationProposal(
+                proposal_id="p1",
+                proposal_type="UPDATE_RETRIEVAL_POLICY",
+                target="top_k",
+                payload={"policy": 8},
+            ),
+            GateResult(passed=True),
+            timestamp=1.0,
+        )
+        snap = store.snapshot()
+        assert snap.retrieval == {"top_k": 8}
+        assert MemorySystem(MemoryConfig(memory_dim=16), snap).policy["top_k"] == 8
 
     def test_unknown_kind_in_initial_rejected(self) -> None:
         with pytest.raises(ValueError, match="未知的结构类别"):

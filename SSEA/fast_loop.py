@@ -343,7 +343,14 @@ class FastLoop:
         hidden_new, intent = self.state_core(p_t, m_t, body, d_t, self.hidden)
 
         a_t = self.decoder(
-            intent, body.action_constraints, d_t, self._candidates(obs)
+            intent,
+            body.action_constraints,
+            d_t,
+            self._candidates(obs),
+            # 门控阈值来自结构快照。慢环改门控的唯一合法路径就是改这份快照
+            # （提案 → 验证门 → Structure Store → WAKE 换版），参数侧没有
+            # 可验证的落点，见 SSEA/plasticity.py 的 DEFERRED_SCOPES。
+            dict(self.context.thresholds),
         )
 
         self.skill_runner.submit(a_t, body, obs)
@@ -367,6 +374,11 @@ class FastLoop:
         #
         # 用 a_t 而非 u_t：技能执行中 u_t 是子动作，而"本帧想记一件事"是
         # 模型的意图，意图只存在于解码产物里。
+        #
+        # **不在这里补 MEMORY_STORED 事件**：Environment._apply_memory 已经
+        # 发了。两个生产者发同一条事件类型、语义却不同（"请求已发出" vs
+        # "已入库"）会让这条类型变含糊——而含糊的事件类型比没有更糟。
+        # "真的写进去了几条"由 memory.stats.writes 说，不靠事件流。
         self.memory.write(a_t.memory, p_t, obs_next, feedback)
 
         # 检索命中同样留痕。判据是 m_t 非零——无命中时 retrieve() 返回零向量，
