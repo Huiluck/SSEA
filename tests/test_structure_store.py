@@ -1,0 +1,404 @@
+"""Milestone 1 测试：Structure Injection Surface（08 §2.1）。
+
+本文件是 Milestone 1 最重要的测试。它证明的不是"字段存在"，
+而是 08 §2.1 列出的四条性质是**结构事实**，不依赖调用方自觉：
+
+    - 快环零改动
+    - 失败天然回滚（不存在"回滚"操作，因为从未应用）
+    - 可遗传
+    - 可审计
+"""
+
+from __future__ import annotations
+
+import pytest
+
+from SSEA.sse_protocols import (
+    Action,
+    GateResult,
+    Locomotion,
+    SelfModificationProposal,
+    Skill,
+    StructureStore,
+)
+
+
+def make_action() -> Action:
+    return Action(
+        locomotion=Locomotion(direction=(1.0, 0.0), speed=0.5, duration=0.1)
+    )
+
+
+def make_skill(skill_id: str = "s1") -> Skill:
+    return Skill(
+        skill_id=skill_id,
+        name="forage",
+        precondition={"min_energy": 0.2},
+        action_sequence=(make_action(), make_action()),
+        expected_outcome={"energy_gain": 0.1},
+        success_count=0,
+        failure_count=0,
+        energy_cost=0.05,
+        created_from="trace-1",
+        last_used=0.0,
+    )
+
+
+def add_skill_proposal(skill_id: str = "s1") -> SelfModificationProposal:
+    return SelfModificationProposal(
+        proposal_id=f"p-{skill_id}",
+        proposal_type="ADD_SKILL",
+        target=skill_id,
+        payload={"skill": make_skill(skill_id)},
+        reason="从 trace 编译",
+    )
+
+
+# ----------------------------------------------------------------------
+#  版本化与五类结构
+# ----------------------------------------------------------------------
+
+
+class TestVersioning:
+    def test_five_kinds_each_with_own_version(self) -> None:
+        store = StructureStore()
+        assert store.versions == {
+            "skills": 0,
+            "rules": 0,
+            "adapters": 0,
+            "thresholds": 0,
+            "retrieval": 0,
+        }
+
+    def test_commit_bumps_only_affected_kind(self) -> None:
+        store = StructureStore()
+        before = dict(store.versions)
+        store.commit(add_skill_proposal(), GateResult(passed=True), timestamp=1.0)
+        after = store.versions
+        assert after["skills"] == before["skills"] + 1
+        assert {k: after[k] for k in after if k != "skills"} == {
+            k: before[k] for k in before if k != "skills"
+        }
+
+    @pytest.mark.parametrize(
+        "ptype,target,payload",
+        [
+            ("ADD_SKILL", "s1", {"skill": make_skill()}),
+            ("UPDATE_SKILL", "s1", {"skill": make_skill()}),
+            ("DISABLE_SKILL", "s1", {}),
+            ("ADD_RULE", "r1", {"rule": {"if": "energy<0.2", "then": "flee"}}),
+            ("UPDATE_RULE", "r1", {"rule": {"if": "a", "then": "b"}}),
+            ("UPDATE_THRESHOLD", "caution", {"value": 0.7}),
+            ("UPDATE_RETRIEVAL_POLICY", "default", {"policy": {"top_k": 8}}),
+            ("UPDATE_ADAPTER", "instinct_1", {"adapter": b"\x01\x02"}),
+        ],
+    )
+    def test_every_proposal_type_maps_to_a_kind(
+        self, ptype: str, target: str, payload: dict
+    ) -> None:
+        store = StructureStore()
+        rec = store.commit(
+            SelfModificationProposal(
+                proposal_id="p1",
+                proposal_type=ptype,
+                target=target,
+                payload=payload,
+            ),
+            GateResult(passed=True),
+            timestamp=1.0,
+        )
+        assert rec.applied
+        assert rec.from_version == 0
+        assert rec.to_version == 1
+
+    def test_unknown_kind_in_initial_rejected(self) -> None:
+        with pytest.raises(ValueError, match="未知的结构类别"):
+            StructureStore(initial={"weights": {}})
+
+    def test_disable_skill_removes_it(self) -> None:
+        store = StructureStore()
+        store.commit(add_skill_proposal("s1"), GateResult(passed=True), timestamp=1.0)
+        assert store.snapshot().get_skill("s1") is not None
+        store.commit(
+            SelfModificationProposal(
+                proposal_id="p2", proposal_type="DISABLE_SKILL", target="s1"
+            ),
+            GateResult(passed=True),
+            timestamp=2.0,
+        )
+        assert store.snapshot().get_skill("s1") is None
+
+
+# ----------------------------------------------------------------------
+#  失败天然回滚 —— 不存在"回滚"操作，因为从未应用
+# ----------------------------------------------------------------------
+
+
+class TestFailureRollsBackNaturally:
+    def test_rejected_proposal_does_not_bump_version(self) -> None:
+        store = StructureStore()
+        rec = store.commit(
+            add_skill_proposal(), GateResult(passed=False, reason="sandbox failed"), timestamp=1.0
+        )
+        assert not rec.applied
+        assert rec.from_version == rec.to_version == 0
+        assert store.versions["skills"] == 0
+
+    def test_rejected_proposal_does_not_change_snapshot(self) -> None:
+        store = StructureStore()
+        before = store.snapshot()
+        store.commit(
+            add_skill_proposal(),
+            GateResult(passed=False, stage_failed="regression"),
+            timestamp=1.0,
+        )
+        after = store.snapshot()
+        assert before.fingerprint() == after.fingerprint()
+        assert after.get_skill("s1") is None
+
+    def test_no_rollback_api_exists(self) -> None:
+        """结构事实：StructureStore 没有 rollback / revert 方法。
+
+        回滚之所以不需要，是因为被驳回的提案从未被应用——
+        版本号不切换，快照继续用旧版（08 §2.1）。
+        """
+        public = {n for n in dir(StructureStore) if not n.startswith("_")}
+        assert not (public & {"rollback", "revert", "undo", "restore"})
+
+    def test_snapshot_survives_later_rejection(self) -> None:
+        """已应用的结构不因后续驳回而失效。"""
+        store = StructureStore()
+        store.commit(add_skill_proposal("s1"), GateResult(passed=True), timestamp=1.0)
+        ctx = store.snapshot()
+        assert ctx.get_skill("s1") is not None
+        store.commit(
+            add_skill_proposal("s2"),
+            GateResult(passed=False, reason="bad precondition"),
+            timestamp=2.0,
+        )
+        # 旧快照不受影响；新快照只含 s1
+        assert ctx.get_skill("s1") is not None
+        assert ctx.get_skill("s2") is None
+        assert store.snapshot().get_skill("s2") is None
+
+    def test_partial_failure_keeps_earlier_success(self) -> None:
+        store = StructureStore()
+        store.commit(add_skill_proposal("s1"), GateResult(passed=True), timestamp=1.0)
+        store.commit(
+            add_skill_proposal("s2"),
+            GateResult(passed=False, stage_failed="format"),
+            timestamp=2.0,
+        )
+        store.commit(add_skill_proposal("s3"), GateResult(passed=True), timestamp=3.0)
+        assert store.versions["skills"] == 2
+        assert store.applied_count() == 2
+        assert store.rejected_count() == 1
+
+
+# ----------------------------------------------------------------------
+#  快环零改动 —— 快照与 Store 脱钩
+# ----------------------------------------------------------------------
+
+
+class TestFastLoopIsolation:
+    def test_snapshot_is_immutable(self) -> None:
+        store = StructureStore()
+        store.commit(add_skill_proposal("s1"), GateResult(passed=True), timestamp=1.0)
+        ctx = store.snapshot()
+        with pytest.raises(Exception):
+            ctx.skills = {}  # type: ignore[misc]
+
+    def test_snapshot_does_not_change_after_later_commit(self) -> None:
+        store = StructureStore()
+        store.commit(add_skill_proposal("s1"), GateResult(passed=True), timestamp=1.0)
+        ctx = store.snapshot()
+        fp_before = ctx.fingerprint()
+        store.commit(add_skill_proposal("s2"), GateResult(passed=True), timestamp=2.0)
+        assert ctx.fingerprint() == fp_before
+        assert ctx.get_skill("s2") is None  # 旧快照看不到新技能
+
+    def test_fast_loop_reads_only_snapshot(self) -> None:
+        """快环的读取面就是 FastLoopContext，不含 Store 的写入方法。"""
+        store = StructureStore()
+        store.commit(add_skill_proposal("s1"), GateResult(passed=True), timestamp=1.0)
+        ctx = store.snapshot()
+        public = {n for n in dir(ctx) if not n.startswith("_")}
+        assert not (public & {"commit", "apply", "write", "reject"})
+
+    def test_snapshot_none_field_rejected(self) -> None:
+        """五个结构字段都不接受 None——空结构用空 Mapping。"""
+        from SSEA.sse_protocols import FastLoopContext
+
+        with pytest.raises(ValueError, match="不能为 None"):
+            FastLoopContext(
+                skills=None,  # type: ignore[arg-type]
+                rules={},
+                adapters={},
+                thresholds={},
+                retrieval={},
+                versions={},
+            )
+
+
+# ----------------------------------------------------------------------
+#  可遗传 —— 注入面是遗传面的子集
+# ----------------------------------------------------------------------
+
+
+class TestInheritanceSurface:
+    def test_snapshot_fields_feed_gene_package(self) -> None:
+        """快照的三个字段直接对应 GenePackage 的三个字段来源（08 §2.1）。"""
+        store = StructureStore()
+        store.commit(add_skill_proposal("s1"), GateResult(passed=True), timestamp=1.0)
+        store.commit(
+            SelfModificationProposal(
+                proposal_id="p2",
+                proposal_type="UPDATE_THRESHOLD",
+                target="caution",
+                payload={"value": 0.7},
+            ),
+            GateResult(passed=True),
+            timestamp=2.0,
+        )
+        store.commit(
+            SelfModificationProposal(
+                proposal_id="p3",
+                proposal_type="UPDATE_ADAPTER",
+                target="instinct_1",
+                payload={"adapter": b"\x01\x02"},
+            ),
+            GateResult(passed=True),
+            timestamp=3.0,
+        )
+        ctx = store.snapshot()
+
+        # 注入面 → 遗传面：同一份结构定义，两处消费
+        assert ctx.skills  # → GenePackage.skill_library
+        assert ctx.adapters  # → GenePackage.instinct_adapters
+        assert ctx.thresholds  # → GenePackage.behavior_policy
+
+    def test_threshold_roundtrip(self) -> None:
+        store = StructureStore()
+        store.commit(
+            SelfModificationProposal(
+                proposal_id="p1",
+                proposal_type="UPDATE_THRESHOLD",
+                target="caution",
+                payload={"value": 0.7},
+            ),
+            GateResult(passed=True),
+            timestamp=1.0,
+        )
+        assert store.snapshot().get_threshold("caution") == 0.7
+        assert store.snapshot().get_threshold("missing", default=0.25) == 0.25
+
+    def test_retrieval_policy_returns_copy(self) -> None:
+        store = StructureStore(
+            initial={"retrieval": {"default": {"top_k": 4, "min_importance": 0.3}}}
+        )
+        policy = store.snapshot().get_retrieval_policy()
+        policy["default"]["top_k"] = 999
+        assert store.snapshot().get_retrieval_policy()["default"]["top_k"] == 4
+
+
+# ----------------------------------------------------------------------
+#  可审计
+# ----------------------------------------------------------------------
+
+
+class TestAuditability:
+    def test_audit_record_fields(self) -> None:
+        store = StructureStore()
+        rec = store.commit(add_skill_proposal(), GateResult(passed=True), timestamp=7.5)
+        assert rec.proposal_id == "p-s1"
+        assert rec.kind == "skills"
+        assert rec.from_version == 0
+        assert rec.to_version == 1
+        assert rec.gate_result == "pass"
+        assert rec.timestamp == 7.5
+        assert rec.applied
+
+    def test_audit_log_preserves_order(self) -> None:
+        store = StructureStore()
+        for i in range(3):
+            store.commit(
+                add_skill_proposal(f"s{i}"), GateResult(passed=True), timestamp=float(i)
+            )
+        log = store.audit_log()
+        assert [r.proposal_id for r in log] == ["p-s0", "p-s1", "p-s2"]
+        assert [r.to_version for r in log] == [1, 2, 3]
+
+    def test_rejection_recorded_with_stage(self) -> None:
+        store = StructureStore()
+        rec = store.commit(
+            add_skill_proposal(),
+            GateResult(passed=False, stage_failed="sandbox", reason="timeout"),
+            timestamp=1.0,
+        )
+        assert rec.gate_result == "reject:sandbox"
+        assert rec.reason == "timeout"
+        assert not rec.applied
+
+    def test_counts(self) -> None:
+        store = StructureStore()
+        store.commit(add_skill_proposal("a"), GateResult(passed=True), timestamp=1.0)
+        store.commit(
+            add_skill_proposal("b"), GateResult(passed=False), timestamp=2.0
+        )
+        store.commit(add_skill_proposal("c"), GateResult(passed=True), timestamp=3.0)
+        assert store.applied_count() == 2
+        assert store.rejected_count() == 1
+        assert len(store.audit_log()) == 3
+
+    def test_version_unknown_kind_raises(self) -> None:
+        store = StructureStore()
+        ctx = store.snapshot()
+        with pytest.raises(KeyError, match="未知的结构类别"):
+            ctx.version_of("weights")
+
+
+# ----------------------------------------------------------------------
+#  验收实验 7 的可执行骨架（08 §6）
+# ----------------------------------------------------------------------
+
+
+class TestSleepCompilationExperimentShape:
+    """08 §6 建议的验收实验 7：慢环在一等公民状态中被触发，且注入可回滚。
+
+    Milestone 1 只提供协议骨架，不提供代谢判定与 Gate 本体；
+    此处验证该实验的**结构前提**已具备：提案可被分别放过与驳回，
+    且只有被放过的提案改变快环行为。
+    """
+
+    def test_gate_selectively_passes(self) -> None:
+        store = StructureStore()
+        proposals = [add_skill_proposal(f"s{i}") for i in range(4)]
+        # 放过偶数，驳回奇数
+        for i, p in enumerate(proposals):
+            store.commit(
+                p,
+                GateResult(passed=(i % 2 == 0), stage_failed=None if i % 2 == 0 else "regression"),
+                timestamp=float(i),
+            )
+        ctx = store.snapshot()
+        assert ctx.get_skill("s0") is not None
+        assert ctx.get_skill("s1") is None
+        assert ctx.get_skill("s2") is not None
+        assert ctx.get_skill("s3") is None
+        assert store.versions["skills"] == 2
+
+    def test_audit_completeness_for_experiment(self) -> None:
+        """版本切换审计记录完整率 = 100% 是可判定的。"""
+        store = StructureStore()
+        for i, p in enumerate([add_skill_proposal(f"s{i}") for i in range(3)]):
+            store.commit(
+                p, GateResult(passed=(i != 1)), timestamp=float(i)
+            )
+        log = store.audit_log()
+        assert len(log) == 3
+        assert all(
+            r.from_version is not None and r.to_version is not None for r in log
+        )
+        # 驳回项 from == to
+        rejected = [r for r in log if not r.applied]
+        assert all(r.from_version == r.to_version for r in rejected)
