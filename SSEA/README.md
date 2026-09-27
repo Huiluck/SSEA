@@ -81,7 +81,7 @@ tests/
 python -m pytest tests/ -q                          # 系统 Python 也可跑，环境已补齐
 ```
 
-当前：**737 passed, 1 skipped**（skip 是 `StructureStore` 非 dataclass，
+当前：**751 passed, 1 skipped**（skip 是 `StructureStore` 非 dataclass，
 `test_annotations_resolve` 主动跳过，符合预期）。
 
 **这个数字必须在任意测试顺序下都成立**。若干测试用 `torch.randn` 从全局 RNG
@@ -100,7 +100,7 @@ for i in $(seq 0 14); do
 done
 ```
 
-15 个 seed 下均为 737 passed / 1 skipped（Milestone 4 增量 3 落地时实测；
+15 个 seed 下均为 751 passed / 1 skipped（Milestone 4 增量 3 落地时实测；
 增量 2 收尾时 684，增量 1 收尾时 649）。这条纪律由
 [docs/13-milestone4-plan.md](docs/13-milestone4-plan.md) §7 定下：
 **此后每次改动都必须在这 15 个 seed 下复跑**，不只是默认顺序。

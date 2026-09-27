@@ -48,6 +48,7 @@ import random
 from dataclasses import dataclass
 
 from .sse_protocols import (
+    EVENT_TYPES,
     Action,
     ActionConstraints,
     BodyState,
@@ -177,6 +178,11 @@ class EnvironmentConfig:
                 "reach 大于 perception_radius：可达但不可见的目标"
                 "会让 Action Decoder 无从选择"
             )
+        # max_events=0 会让 ``del self._events[: -0]`` 退化成 ``del lst[:0]``，
+        # 一条都不删——缓冲静默变成无界。这是"看起来生效了，其实没有"的
+        # 同一形状（12 §6 债务 1），所以在这里炸掉而不是等它悄悄长大。
+        if self.max_events < 1:
+            raise ValueError(f"max_events 至少为 1，否则缓冲不截断: {self.max_events}")
 
 
 @dataclass
@@ -235,6 +241,7 @@ class Environment:
         self._echoed: list[CommunicationSignal] = []
         self._event_notes: list[tuple[float, str, str, str]] = []
         self._visible_ids: frozenset[str] = frozenset()
+        self._reset_event_counts()
 
         # 通道副产物：本阶段只记录，不消费。真正的消费者在 Milestone 3/4。
         self.proposals: list[SelfModificationProposal] = []
@@ -270,9 +277,23 @@ class Environment:
         self._visible_ids = frozenset()
         self.proposals = []
         self.memory_requests = []
+        self._reset_event_counts()
         self._spawn_world()
         self._diff_visibility()
         return self._observe()
+
+    def _reset_event_counts(self) -> None:
+        """把按类型的事件累计重置为全零。
+
+        键集**动态取自** ``EVENT_TYPES``，不是写死的 14 个名字——这样往词表里
+        增删类型时不需要记得来这里改第二处（两处各写一遍，迟早漂移）。
+
+        ``__init__`` 与 ``reset()`` 都调它，因为它们做的是同一件事：
+        ``_events`` / ``_event_notes`` / ``_event_seq`` 一起归零。计数器与它们
+        同生命周期，理由见 ``event_counts()``。
+        """
+
+        self._event_counts: dict[str, int] = {t: 0 for t in EVENT_TYPES}
 
     def _spawn_world(self) -> None:
         """生成资源 / 危险源 / 道具。
@@ -864,8 +885,10 @@ class Environment:
         就没有生产者——正是 08 §2.4 从 Action 里删掉 latent_action 的那种缺陷。
 
         环境**只是记录方**：它不知道模型为什么检索、检索到了什么，
-        也不据此改变世界。事件进观测流，供观察员与慢环检索
-        （07 §7.2：调试与观察可用，不进控制闭环的决策依据）。
+        也不据此改变世界。事件进观测流，供观察员与慢环检索。
+        07 §7.2 的两份清单正是这个位置：自然语言可用于"人类观察员日志 /
+        事后解释 / 慢环规划候选 / 调试输出"，**不能直接参与**"感知输入 /
+        动作输出 / 身体控制 / 实时闭环"。
         """
 
         self._emit_event(event_type, source_id="self", importance=importance, extra=extra)
@@ -900,6 +923,13 @@ class Environment:
                 importance=min(1.0, max(0.0, importance)),
             )
         )
+        # 累计计数**写在构造之后**，不是与 ``_event_seq += 1`` 并排。
+        # 顺序有讲究：``_apply`` 被 step() 的兜底 except 包着，越界的事件类型
+        # 会先在这里被 EventVector 拒掉（抛 ValueError），若那时计数器已经加过，
+        # 闭词表的 dict 里就会多出一个外来键——而"模糊的事件类型比没有更糟"。
+        # 放在构造之后，dict 保持干净，代价只是 ``_event_seq`` 永久领先 1，
+        # 而它只用来生成 event_id，编号有空洞无害。
+        self._event_counts[event_type] += 1
         del self._events[: -self.config.max_events]
         if extra:
             # 事件向量没有自由文本字段（07 §8.7 刻意如此），但"为什么失败"
@@ -921,6 +951,52 @@ class Environment:
         """近期事件流。供观察员与慢环检索，不进控制闭环。"""
 
         return tuple(self._events)
+
+    def event_counts(self) -> dict[str, int]:
+        """按类型累计的事件计数，**自构造或上次 reset() 以来**。
+
+        观察员用，不是奖励信号。
+
+        为什么需要它：``event_log()`` 是 16 槽环形缓冲（``max_events``），
+        跑完一轮再统计会**静默丢掉早期事件**，而且错的方向偏向零——正好会把
+        有效果的实验读成没效果。本计数器只增不减、不截断，与 ``_event_seq``
+        互为校验（``sum(event_counts().values()) == env._event_seq``）。
+
+        为什么口径是"自构造或上次 ``reset()`` 以来"而不是"整轮"：
+        ``FastLoop.__init__`` 会调 ``reset()``，而 ``reset()`` 归零。环境不该持有
+        比一个 episode 更长的记忆；跨 episode 的累计是**调用方**的职责。
+
+        **返回全部 ``EVENT_TYPES`` 键、含 0 值。** 稀疏 dict 会把"0 次"与
+        "没测"混成同一个样子，而这两者必须可区分。但键全了之后 ``0`` 本身
+        有三义，dict 分不出来，只能靠这段话：
+
+        1. **有机会、确实没发生。**
+        2. **没有生产者**——当前是这 5 个：``ENERGY_LOST`` /
+           ``SKILL_SUCCESS`` / ``SKILL_FAILURE`` / ``SELF_MOD_APPLIED`` /
+           ``SELF_MOD_ROLLBACK``。它们恒为 0，**这是缺口不是成绩**。
+           （``ENERGY_LOST``：能量一直在掉却一条事件都不发；``SKILL_*``：只进
+           ``StepRecord.skill_event``，从不进事件流；``SELF_MOD_*``：应用方是
+           StructureStore，它没有环境引用，属 Milestone 5 的接线。）
+        3. **这段没跑到**（比如从未睡眠）。
+
+        **不要拿 ``ACTION_FAILED`` 反推动作合法率。** 这一个桶混了三类：
+        约束拒绝、动作级失败（无 target / 超距 / 不可抓）、以及被兜底 except
+        吞掉的内部异常。运行指标里的合法率是从 ``feedback.notes`` 数
+        ``constraint_rejected:`` 得来的，口径不同，混用会让归档数字悄悄改义。
+
+        同理 ``ENERGY_GAINED`` **不是**"拿到了多少能量"：抓取是先夹到上限
+        1.0 再发事件，事件里记的是**意图值**，而同一帧的
+        ``Feedback.energy_change`` 可能**是负的**（还在扣基础代谢与动作消耗）。
+        要能量收支就用 ``Feedback``，别用事件计数。
+
+        合法性：这是**症状计数**，不是质量评分（C9 只淘汰、不评分）。
+        ``11-phase1-not-doing-list.md`` 给 C9 开的唯一豁免口是
+        "观察员评分系统 / 奖励函数……生态级永不；**调试指标除外**"。
+        但它没有物理屏障——``FastLoop`` 手里就握着 ``environment``，
+        所以"不进控制闭环"是**约定 + 测试**守着的，不是架构保证的。
+        """
+
+        return dict(self._event_counts)
 
     def event_notes(self) -> tuple[tuple[float, str, str, str], ...]:
         """近期事件的可读说明：``(time, event_type, source_id, extra)``。

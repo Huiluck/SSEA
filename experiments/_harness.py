@@ -2,12 +2,44 @@
 
 设计上有三条刻意的选择：
 
-**一、量从 trace 与审计日志取，不从事件流取。**
-``Environment._event_notes`` 是 16 槽环形缓冲（12 §6 债务 10），
-"跑完再统计事件流"会**静默漏掉早期事件**——本次核对时它真的咬过一次：
+**一、量从 trace、累计计数器与审计日志取，不从环形缓冲取。**
+``Environment.event_log()`` / ``event_notes()`` 是 16 槽环形缓冲（12 §6 债务 10），
+"跑完再遍历事件流"会**静默漏掉早期事件**——本次核对时它真的咬过一次：
 「跑完统计 ``ENERGY_GAINED``」得到 0 次，而逐帧追踪显示第 10 帧确实
-``grasp: +0.356 energy``。所以本模块的累计量一律逐帧现加，
-或者直接读 ``StructureStore.audit_log()``（那是 append-only 的，不丢）。
+``grasp: +0.356 energy``。所以本模块的累计量逐帧现加，
+或者读 ``StructureStore.audit_log()``（append-only，不丢），
+或者读 ``Environment.event_counts()``（**只增不减、不截断**，2026-09-27 加入，
+正是为了补这个洞）。
+
+但注意 ``event_counts()`` 与逐帧求和**不是一回事**，两者不可互换：
+
+- 它按**事件类型**分解，所以回答得了"这轮 grasp 成功了几次"；
+  但它**没有 source_id 维度**，所以回答不了"接触了几次危险源"——
+  ``OBJECT_FOUND`` 对资源与危险源一视同仁。
+- 它数的是**事件**，不是**能量**：一次抓取会发 ``ENERGY_GAINED``，
+  但同一帧的 ``Feedback.energy_change`` 完全可能是负的（还扣着基础代谢
+  与动作消耗），而 ``push`` / ``pull`` / 基础代谢的耗能**根本不发事件**。
+  要能量收支就用 trace 上的 ``Feedback``。
+
+**一之二、能量口径：三条约定写死在这里，别在各脚本里各定一套。**
+
+1. **分母是 RUN 帧数**，不是 ``len(trace)``。睡眠帧每帧**涨** 0.01 能量
+   （``environment.py`` 的 ``rest``），WAKE 帧经 ``_empty_feedback()`` 塞一个
+   **合成 0**。用总帧数归一化会让"睡得多的回合"显得**更省**——
+   和上面 ``action_legality_rate`` 同一个陷阱。
+2. **``energy_spent`` 是毛支出**（负增量取绝对值求和），睡眠期的恢复**不抵消**它。
+   净额另给（``net_energy_change``）。两者差别很大：睡眠占寿命一大半。
+3. **取的是夹取后的"实现增量"，不是"请求增量"。** ``Feedback.energy_change``
+   是 ``round(self.energy - energy_before, 6)``，即夹取之后的差。能量满 1.0 时
+   抓资源，它是 0.0——这是**对的**：上限 1.0 是刻意强加的策略压力
+   （"吃饱了就不能再存"），用资源标称价值求和会把这份浪费藏起来。
+
+   由此有一条**已知偏低、不是 bug**：能量 6 处 ``max(0.0, ...)`` 与 damage 的
+   ``min(max_damage, ...)`` 都在**丢弃超调**，而死亡帧恰恰是消耗峰值帧。
+   报告里要注明，不要当成测量误差去"修"。
+
+**一之三、求和要有容差。** ``round(..., 6)`` 累积几百帧后与
+``final − initial`` 差约 1e-4，"精确守恒"这个断言拿不到，用 ``pytest.approx``。
 
 **二、每个数字都必须能被人复跑。**
 ``run_episode`` 的种子与帧数是显式参数，且 ``torch.manual_seed`` 在
@@ -66,6 +98,15 @@ class EpisodeResult:
     rejected_kinds: tuple[str, ...] = ()
     version_bumps: int = 0
     audited_bumps: int = 0
+    #: 逐帧 ``Feedback.energy_change`` 的**正部**之和（夹取后的实现增量）。
+    energy_gained: float = 0.0
+    #: 逐帧 ``Feedback.energy_change`` 的**负部绝对值**之和——毛支出，睡眠恢复不抵消。
+    energy_spent: float = 0.0
+    #: 逐帧 ``Feedback.damage_change`` 的正部之和。
+    damage_taken: float = 0.0
+    #: 环境的按类型累计计数快照（``Environment.event_counts()``）。
+    #: **只在尾部取一次**——它本身不截断，所以不需要逐帧加。
+    event_totals: dict[str, int] = field(default_factory=dict)
     extra: dict[str, Any] = field(default_factory=dict)
 
     # ---- 派生指标（12 §4.2 表格里的那几列）----
@@ -101,6 +142,27 @@ class EpisodeResult:
         if self.version_bumps == 0:
             return 1.0  # 没升过版，"每次都记了"空真
         return self.audited_bumps / self.version_bumps
+
+    @property
+    def net_energy_change(self) -> float:
+        """净能量变化 = 正部 − 负部。
+
+        与 ``energy_gained - energy_spent`` 恒等（就这么定义的），
+        单独给个名字是为了让"用净额还是毛额"在调用处**看得见**——
+        睡眠期的恢复会抵消运行期的消耗，两个数差别很大。
+        """
+        return self.energy_gained - self.energy_spent
+
+    @property
+    def energy_spent_per_run_frame(self) -> float:
+        """每 RUN 帧的能量支出。**实验 3 的「能量消耗变化」应当用这个口径。**
+
+        分母是 RUN 帧数而非 ``len(trace)``：睡眠帧每帧涨 0.01 能量，
+        用它当分母会让睡得多的回合显得更省。理由见模块 docstring 一之二。
+        """
+        if self.run_frames == 0:
+            return 0.0
+        return self.energy_spent / self.run_frames
 
 
 def build_slow_loop(
@@ -164,6 +226,9 @@ def run_episode(
     internal_total = 0
     language_crossings = 0
     observation_leaks = 0
+    energy_gained = 0.0
+    energy_spent = 0.0
+    damage_taken = 0.0
 
     while loop.alive and len(loop.trace()) < frames:
         if watch_language:
@@ -175,6 +240,11 @@ def run_episode(
         if record.feedback is not None:
             rejected_total += record.feedback.notes.count("constraint_rejected:")
             internal_total += record.feedback.notes.count("internal_error:")
+            # 逐帧现加，不从事件流取——口径见模块 docstring 一之一。
+            change = record.feedback.energy_change
+            energy_gained += max(0.0, change)
+            energy_spent += max(0.0, -change)
+            damage_taken += max(0.0, record.feedback.damage_change)
 
         if watch_language:
             # 发出边界：这一帧真正送进环境的动作。
@@ -208,6 +278,11 @@ def run_episode(
         # 审计完整性：每次升版都该有一条 from→to 连续的 applied 记录。
         version_bumps=sum(1 for a in applied if a.to_version == a.from_version + 1),
         audited_bumps=len(applied),
+        energy_gained=energy_gained,
+        energy_spent=energy_spent,
+        damage_taken=damage_taken,
+        # 尾部取一次即可：计数器只增不减、不截断，不需要逐帧加。
+        event_totals=loop.environment.event_counts(),
     )
 
 
@@ -250,6 +325,91 @@ def max_consecutive_clean_run(trace: Sequence[Any]) -> int:
         current += 1
         best = max(best, current)
     return best
+
+
+# ----------------------------------------------------------------------
+#  窗口内的量（实验 2 / 3 用；与 Environment 的全轮累计分工不同）
+# ----------------------------------------------------------------------
+
+
+def count_events(trace: Sequence[Any], event_type: str) -> int:
+    """``trace`` 里某类事件的个数，**按 event_id 去重**。
+
+    为什么要去重：观测里带的 ``events`` 是环境的**滚动窗口**，同一个事件会
+    连续出现在十几帧的观测里，按帧数会把一次写入数成十几次。这个口径与
+    ``SSEA.plasticity._event_ids`` 一致（那里也是这么写的，理由相同）。
+
+    为什么不去重不行、不按窗口也不行——两者是**两件事**，别混：
+
+    - 去重治的是**重复计数**（同一事件的多次出现）。
+    - 本函数仍在 ``trace`` 这个**给定窗口**内计数，窗口外的事件它看不见。
+      要"整轮一共几次"请用 ``Environment.event_counts()``，
+      那个只增不减、不截断。
+
+    注意 ``MEMORY_RETRIEVED`` **有一帧滞后**：``observe_model_event`` 在
+    ``step()`` 返回观测**之后**才调用，所以帧 t 发出的事件出现在帧 t+1 的
+    观测里。计数不受影响，只影响"算在哪一帧头上"（``plasticity`` 的
+    docstring 也记了这一条）。
+    """
+
+    ids: set[str] = set()
+    for record in trace:
+        if record.state != STATE_RUN:
+            continue
+        for event in record.observation.events:
+            if event.event_type == event_type:
+                ids.add(event.event_id)
+    return len(ids)
+
+
+def energy_by_version_window(trace: Sequence[Any]) -> list[dict[str, Any]]:
+    """按**结构版本窗口**切开的能量收支，从旧到新。
+
+    **实验 3 的「能量消耗变化」必须用这个，不能用全轮累计。** 判据是
+    ``StepRecord.context_fingerprint``——与 ``SSEA.plasticity._current_window``
+    同一个切法，那是这个字段的第一个消费者。它 docstring 里记着不切窗口的实测
+    代价：三轮睡眠把 ``memory_gate_threshold`` 从 0.5 一路推到下界 0.15，
+    "不是『收敛到合适的阈值』，是『撞到夹子』"。**同一个错法在能量指标上会重演**：
+    不切版本，固化**前**的消耗会永远留在分子里，于是"固化有没有降低消耗"
+    这个问题被历史数据稀释掉。
+
+    返回每段一个 dict，键为 ``fingerprint`` / ``run_frames`` /
+    ``energy_gained`` / ``energy_spent`` / ``damage_taken`` /
+    ``energy_spent_per_run_frame``。空 trace 返回空列表；
+    指纹为空（``versions={}``，没有版本信息）时退化为**一段**——
+    没有版本信息就没有归因可言，与 ``_current_window`` 的取舍一致。
+    """
+
+    windows: list[dict[str, Any]] = []
+    current_fp: tuple[tuple[str, int], ...] | None = None
+    acc: dict[str, Any] | None = None
+
+    for record in trace:
+        if record.state != STATE_RUN:
+            continue
+        fp = record.context_fingerprint
+        if fp != current_fp:
+            current_fp = fp
+            acc = {
+                "fingerprint": fp,
+                "run_frames": 0,
+                "energy_gained": 0.0,
+                "energy_spent": 0.0,
+                "damage_taken": 0.0,
+            }
+            windows.append(acc)
+        assert acc is not None  # 由上面那个分支保证，仅给类型检查看
+        acc["run_frames"] += 1
+        if record.feedback is not None:
+            change = record.feedback.energy_change
+            acc["energy_gained"] += max(0.0, change)
+            acc["energy_spent"] += max(0.0, -change)
+            acc["damage_taken"] += max(0.0, record.feedback.damage_change)
+
+    for acc in windows:
+        n = acc["run_frames"]
+        acc["energy_spent_per_run_frame"] = acc["energy_spent"] / n if n else 0.0
+    return windows
 
 
 # ----------------------------------------------------------------------

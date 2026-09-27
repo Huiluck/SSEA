@@ -3,7 +3,7 @@
 **日期**：2026-09-27（Milestone 4 增量 3 落地后更新）
 **判定依据**：[07-ssea-v0.3.1-charter.md](07-ssea-v0.3.1-charter.md) §11 里程碑、
 §18 完成标准、§12 验收实验；08 修订条款已并入
-**代码**：[`SSEA/`](../SSEA/)（33 个 `.py`，7469 行）；[`tests/`](../tests/)（18 个测试文件，8675 行）
+**代码**：[`SSEA/`](../SSEA/)（33 个 `.py`，7597 行）；[`tests/`](../tests/)（18 个测试文件，8942 行）
 **设计文档**：[`docs/`](.)（14 篇编号文档 + 本索引 README）
 **定位**：对账式进度报告——回答「到哪了」。总览与路线图（「往哪走」）见
 [14-overview-and-roadmap.md](14-overview-and-roadmap.md)。
@@ -25,7 +25,7 @@
 ```
 
 **一句话判断**：基础设施是扎实的——协议、双环、注入面、记忆、技能、验证门、
-经验编译器、可塑性八块都有测试守着，741 项测试通过，闭环能连续跑，
+经验编译器、可塑性八块都有测试守着，751 项测试通过，闭环能连续跑，
 **慢环现在已经能自己产出提案并提交，并能按可观测症状调整自己的行为阈值**。
 但「SSEA 是一个有效的生存控制架构」这句话
 **目前没有任何证据支持**，因为 §12 的七个验收实验一条都还没跑。
@@ -142,9 +142,9 @@ Milestone 4 剩余三个组件（RuleCompiler、HeritableFilter、Gene Manager�
 
 | 指标 | 数值 | 怎么来的 |
 |---|---|---|
-| 测试通过 | **741 passed, 1 skipped** | `.venv/Scripts/python.exe -m pytest tests/ -q`；skip 是 `StructureStore` 非 dataclass 的主动跳过 |
-| 顺序不变性 | **15 个随机 seed 下均为 741 passed / 1 skipped** | `pytest-randomly` 已装入 `.venv` 与系统 python（见 [requirements.txt](../requirements.txt)）；本次实测 15 seed |
-| 测试覆盖 | 18 个测试文件，8675 行（约为代码的 1.16 倍） | 不含 `conftest.py` |
+| 测试通过 | **751 passed, 1 skipped** | `.venv/Scripts/python.exe -m pytest tests/ -q`；skip 是 `StructureStore` 非 dataclass 的主动跳过 |
+| 顺序不变性 | **15 个随机 seed 下均为 751 passed / 1 skipped** | `pytest-randomly` 已装入 `.venv` 与系统 python（见 [requirements.txt](../requirements.txt)）；本次实测 15 seed |
+| 测试覆盖 | 18 个测试文件，8942 行（约为代码的 1.18 倍） | 不含 `conftest.py` |
 | 协议序列化 | 14 个协议全部 JSON 往返保真 | `test_serialization.py` |
 | 协议层 ML 依赖 | **0** | `TestNoModelDependency` 正向守卫 + `test_model_layer_does_import_torch` 反向守卫 |
 | 连续闭环 | 40 帧无崩溃，记忆读写合并全链路可见 | 见 §7 复现脚本 |
@@ -233,7 +233,7 @@ skill    : seq:5f:energy_gain frames=5 energy_change=+1.0 outcome=energy_gain
 
 ### 4.3 一个必须说清的区分
 
-**741 项测试通过，证明的是工程质量，不是架构有效性。**
+**751 项测试通过，证明的是工程质量，不是架构有效性。**
 
 它证明的是：协议自洽、序列化保真、约束不被违反、注入面四条性质成立、
 记忆与技能的机制按设计工作。它**不**证明：这个架构比别的架构更省算力、
@@ -401,16 +401,23 @@ Gene Manager 的 mutate + 继承。**验收**：模型可以保存基因 / 可�
 | 实验 | 前置 | 现状 |
 |---|---|---|
 | 1 非语言闭环 | 已可跑，缺系统测量 | ✅ **已跑**（2026-09-27），数字见 §4.2 |
-| 2 记忆召回 | Plasticity Controller（否则记忆写入是抽奖）+ 可达的睡眠 | 增量 3 已落地（门控可自修正 0.280 → 1.000）；睡眠判据已修，可达性不再是障碍。**仍缺**：`Environment` 累计计数器（§6 债务 10）——在此之前脚本会静默算错 |
-| 3 技能固化 | Experience Compiler + 默认策略能产出可编译的成功段 | **触发器已就绪**；成功段缺失的成因已逐层拆开（§6 债务 6b），真约束是**趋近能力**。前置同上一条的计数器 |
+| 2 记忆召回 | Plasticity Controller（否则记忆写入是抽奖）+ 可达的睡眠 | 增量 3 已落地（门控可自修正 0.280 → 1.000）；睡眠判据已修；累计计数器**已建**（§6 债务 10，2026-09-27）。**仍缺**：`危险回避率` 的**算式与维度**——它要按 `source_id` 区分危险源与资源，而计数器是按类型的，没有这个维度；外加对照组跑法。真约束是**趋近本能**（债务 6b）：不会转向的 agent 无法回避危险，与记忆无关 |
+| 3 技能固化 | Experience Compiler + 默认策略能产出可编译的成功段 | **触发器已就绪**；成功段缺失的成因已逐层拆开（§6 债务 6b），真约束是**趋近能力**。计数器已建，但 `能量消耗变化` 要的是**按结构版本切开的窗口**（口径先例见 `plasticity._current_window`），不是全轮累计 |
 | 4 基因保存恢复 | Gene Manager save/load | 未跑 |
 | 5 变异 | Gene Manager mutate | 未跑 |
 | 6 安全自我修改 | Verification Gate + Experience Compiler | ✅ **已跑**（2026-09-27）。18 提 18 用，自然驳回 0（**这是要留意的信号**，见 §4.2） |
 | 7 睡眠期编译 | `wants_sleep` 判据修正（§4.3 保留 1） | ✅ **已跑**（2026-09-27）。睡眠进入率 7/8，11 段睡眠对 11 次慢环调用 |
 
 > 三个 ✅ 之间有个共同点值得先说出来：它们的前置都是**已有组件**，
-> 缺的只是测量脚本。剩下四条的前置都还在缺失，其中实验 2 / 3 卡在
-> 同一个计数器上——**那一个是现在唯一还能提升证据等级的前置**（14 §6.3.3）。
+> 缺的只是测量脚本。剩下四条的前置都还在缺失。
+>
+> **上次这里写的是「实验 2 / 3 卡在同一个计数器上」，那句要更正。**
+> 计数器已于 2026-09-27 建成（§6 债务 10），而建成之后看得更清楚：
+> 它是**必要不充分**的——两个实验的验收指标在文档里**只有名字、没有算式**，
+> 且各自还缺一个**维度**（实验 2 缺 `source_id`，实验 3 缺版本窗口）。
+> 真约束回到**趋近本能**（债务 6b）：agent 不会转向，回避率与消耗变化
+> 都无从谈起。所以现在**没有**「唯一还能提升证据等级的前置」这种东西——
+> 剩下四条各自卡在自己的组件上（14 §6.4）。
 
 ---
 
@@ -441,7 +448,7 @@ Gene Manager 的 mutate + 继承。**验收**：模型可以保存基因 / 可�
 ~~README 曾声称测试套件启用了该插件，实际系统 Python 与 `.venv` 里都没装，
 项目也没有 `requirements.txt` / `pyproject.toml` 声明它。~~
 **已解决**（2026-09-27）：用户装入 `.venv`，`requirements.txt` 已补，
-15 个 seed 下均为 741 passed / 1 skipped（本次实测）。顺序不变性**现在有
+15 个 seed 下均为 751 passed / 1 skipped（本次实测）。顺序不变性**现在有
 自动守卫**。`python` 与 `.venv/Scripts/python.exe` **都已装有**
 pytest-randomly 5.0.0，两个解释器跑出来一致。
 
@@ -602,8 +609,57 @@ Action 路径接梯度——那应该是 v0.4+ 的事，且要先回答「为什
 **为什么它是要紧的债务**：实验 2（危险回避率）与实验 3（能量消耗变化）
 都需要跨整轮的累计量。若用 `_event_notes()` 直接统计，两者都会得到
 **看起来合理但错误**的数字——而且是「偏向零」的方向，正好会把有效果的实验
-读成没效果。**跑这两个实验前必须先建累计计数器**（[13](13-milestone4-plan.md)
-§6.6 增量 4 候选第 3 项），或每帧即时累加。
+读成没效果。所以跑这两个实验前，累计量必须有一个不丢的来源
+（[13](13-milestone4-plan.md) §6.6 增量 4 候选第 3 项），或每帧即时累加。
+**但说清楚：这是「必要」不是「充分」——有了计数器，实验 2 / 3 仍跑不了，
+理由见下面第（四）点。**
+
+**状态：已修**（2026-09-27）。`Environment.event_counts()` 返回按类型分解的
+累计计数，只增不减、不截断，键集恰为闭词表 `EVENT_TYPES`；两条互为反面的
+回归钉子见 `tests/test_environment.py::TestEvents`
+（`test_event_log_is_bounded` 断言缓冲**是**有界的，
+`test_event_counts_survive_truncation` 断言计数**不是**）。
+8 seed 实测：每轮 84–216 条事件对 16 槽缓冲，且各轮总计**非单调**——
+后者是「计数器没活过 `reset()`」的证据。
+
+**但动手时发现这条债务的描述只对了一半，两处要更正：**
+
+**（一）body-state 累计从来不是计数器问题。** `Feedback` **已经带逐帧增量**
+（`energy_change` / `damage_change` / `fatigue_change`），且 `step()` 的拒绝路径、
+内部异常路径、`rest()` 睡眠路径、死亡帧**全部**走 `_finish_step`，所以增量
+**都落在 trace 里**。能量收支对 trace 求和即可，不需要环境新增任何状态。
+真正缺的只有**按类型分解的事件计数**——`_event_seq` 其实早就是「总数」，
+缺的是「这轮 grasp 成功了几次」。
+
+**（二）两个仪器不可互换，混用会悄悄改义。**
+
+- `event_counts()["ENERGY_GAINED"]` **不是**「拿到了多少能量」。抓取是先夹到
+  上限 1.0 再发事件，事件里记的是**意图值**，而同一帧的 `Feedback.energy_change`
+  可能**是负的**（还在扣基础代谢与动作消耗）。本条债务记的那个
+  `t=10 ... grasp: +0.356` 正是这种帧。
+- 反方向也漏：`push` / `pull`（`environment.py:695`）与基础代谢扣能量
+  **根本不发事件**，所以「总能量支出」只数事件一定漏。
+- `ACTION_FAILED` 一个桶混了三类（约束拒绝 / 动作级失败 / 内部异常），
+  所以**不能**拿它反推 §4.2 那个 1.0000 合法率——那个数是从
+  `feedback.notes.count("constraint_rejected:")` 来的，口径不同。
+
+**（三）顺带查清一个既存缺口：14 个事件类型里有 5 个没有生产者。**
+`ENERGY_LOST`（能量一直在掉却一条事件都不发）、`SKILL_SUCCESS` / `SKILL_FAILURE`
+（`skill_runner.report()` 返回这两个字符串并进 `StepRecord.skill_event`，
+**但从不 emit 成事件**——技能成败在事件流里是隐形的）、
+`SELF_MOD_APPLIED` / `SELF_MOD_ROLLBACK`（应用方是 `StructureStore`，
+它没有环境引用，属 Milestone 5 的接线）。
+`tests/test_fast_loop.py:581` 的 docstring 早写着「`EVENT_TYPES` 里不留空头类型」，
+但那条测试只断言了 `MEMORY_RETRIEVED` / `MEMORY_STORED` 两个。
+计数器把「不出现」变成「一行看得见的 0」，并由
+`test_event_counts_name_the_producerless_types` 显式钉住——
+**注释写明这是缺口不是成绩**。补生产者是独立的一件事，未做。
+
+**（四）这条债务的「必要不充分」要说准。** 计数器是「在它之前脚本一定会算错」
+的那个前置，**不是**实验 2 / 3 的解锁：`危险回避率` 需要按 `source_id`
+区分危险源与资源，而按类型的 dict **没有这个维度**（`OBJECT_FOUND` 对两者
+一视同仁）；`能量消耗变化` 需要按**结构版本切开的窗口**，累计量同样没有。
+两者的真约束是趋近本能（债务 6b）与「可学的世界」（[14](14-overview-and-roadmap.md) §6）。
 
 **11. 一次性脚本误入提交（已补删除提交，历史留痕）**
 用来核实文档论断的临时探针脚本被 `git add -A` 收进 `d32b148` 并推送。
@@ -650,12 +706,30 @@ Action 路径接梯度——那应该是 v0.4+ 的事，且要先回答「为什
 校验。真正的守卫在 `experiments/_harness.py::count_strs_deep`，
 实测 637 帧 0 次越界。
 
+**14. `EnvironmentConfig` 不校验 `max_events`，`0` 会让缓冲静默无界（已修，2026-09-27）**
+
+`__post_init__` 校验了 `world_radius` / `perception_radius` / `max_damage` /
+`reach`，**漏了 `max_events`**。而 `_emit_event` 里是
+`del self._events[: -self.config.max_events]`——`max_events=0` 时
+`-0` 就是 `0`，`del lst[:0]` **一条都不删**，环形缓冲静默变成无界列表。
+`PerceptionConfig` 对它的对应字段是校验的（`perception_encoder.py:87-88`），
+所以这是漏网而非设计。
+
+**为什么归在债务里而不是「顺手修掉的小事」**：它与债务 1、债务 10 是
+同一个形状——**「看起来生效了，其实没有」**。缓冲有界是 C4（低内存带宽）
+的一条隐含前提，一个把它悄悄关掉的配置值不该是合法的。08 §2.6.2 的取舍是
+「把未预期异常转成 ACTION_FAILED 而非崩溃」，但那是**运行期**的容错；
+这是**构造期**的配置错误，该炸就炸。
+
+修法一行（`max_events < 1` 抛 `ValueError`），回归钉子见
+`tests/test_environment.py::TestEvents::test_max_events_must_be_positive`。
+
 ---
 
 ## 7. 复现方式
 
 ```bash
-# 全套测试（741 passed, 1 skipped）。
+# 全套测试（751 passed, 1 skipped）。
 # python 与 .venv/Scripts/python.exe 都已装 pytest-randomly 5.0.0，两个解释器一致。
 .venv/Scripts/python.exe -m pytest tests/ -q
 

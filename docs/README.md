@@ -46,7 +46,7 @@
 | [09-architecture-originality.md](09-architecture-originality.md) | Milestone 0：架构原创性说明。四层创新定位、六项可消融检验的架构主张、七项明确不声称的事、与九篇论文的对应关系 | Milestone 0 交付物 |
 | [10-boundary-definition-table.md](10-boundary-definition-table.md) | Milestone 0：边界定义表。三条判定测试、17 要素的模型/接口/生态三分、平局裁决先例、后续阶段池 | Milestone 0 交付物 |
 | [11-phase1-not-doing-list.md](11-phase1-not-doing-list.md) | Milestone 0：不做清单。20 项不做的具体理由与失败模式、7 类易误解项、突破清单的流程门槛 | Milestone 0 交付物 |
-| [12-progress-report.md](12-progress-report.md) | 项目进度报告。07 §18 十二项完成标准逐条对账、§12 实验的实测数字与「机制数字 vs 对照组数字」的区分、Milestone 4/5 待办与执行顺序、13 项已知债务 | **进度快照（2026-09-27）** |
+| [12-progress-report.md](12-progress-report.md) | 项目进度报告。07 §18 十二项完成标准逐条对账、§12 实验的实测数字与「机制数字 vs 对照组数字」的区分、Milestone 4/5 待办与执行顺序、14 项已知债务 | **进度快照（2026-09-27）** |
 | [13-milestone4-plan.md](13-milestone4-plan.md) | Milestone 4 执行计划。依赖盘点、修正后的执行顺序、增量 1–3（Verification Gate / Experience Compiler / Plasticity Controller）的设计、验收与落地结果 | **执行计划（进行中）** |
 | [14-overview-and-roadmap.md](14-overview-and-roadmap.md) | 项目总览与路线图。自足入口：项目是什么、架构现状、能力边界、证据现状、依赖图与关键路径 | **入口文档（2026-09-27）** |
 
@@ -128,7 +128,7 @@ Gate 一视同仁。编译器吃 trace 吐提案，**不提交、不评估、不
 而没有任何提案类型能建第一个键）。完整记录见
 [13-milestone4-plan.md](13-milestone4-plan.md) §4.6、§5 与 §6。
 
-全套件当前 **741 passed, 1 skipped**，且在 `pytest-randomly` 的 15 个随机
+全套件当前 **751 passed, 1 skipped**，且在 `pytest-randomly` 的 15 个随机
 seed 下均为此结果（顺序不变性已有自动守卫，见
 [requirements.txt](../requirements.txt)）。
 

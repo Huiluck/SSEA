@@ -574,6 +574,122 @@ class TestEvents:
             env.step(move(speed=0.5))
         assert len(env.event_log()) <= 5
 
+    # ---- 下面三条是债务 10 的回归钉子（12 §6）----------------------------
+    #
+    # 上面那条断言缓冲**是**有界的，下面这条断言计数**不是**。两条互为反面，
+    # 摆在一起才读得懂：缓冲会截断是**设计**（省内存，C4），
+    # 而"跑完再遍历事件流做统计"会静默算错是**后果**。
+    # 曾经的实测症状：统计 ENERGY_GAINED 得到 0 次，而逐帧追踪显示第 10 帧
+    # 确实 grasp 成功——错的方向偏向零，正好把有效果的实验读成没效果。
+
+    def test_event_counts_survive_truncation(self) -> None:
+        """缓冲截断，但累计计数不截断——这就是债务 10 的修法。"""
+
+        cfg = EnvironmentConfig(max_events=5)
+        env = Environment(cfg, seed=1)
+        for _ in range(20):
+            env.step(move(speed=0.5))
+        counts = env.event_counts()
+        total = sum(counts.values())
+        # 缓冲被截到底，计数没有——两者必须都成立，缺一条这个测试就没意义。
+        assert len(env.event_log()) <= 5
+        assert total > len(env.event_log())
+        assert counts["ACTION_SUCCESS"] > len(env.event_log())
+
+    def test_event_counts_equal_event_seq(self) -> None:
+        """``sum(event_counts()) == _event_seq``：不漏、不重、不漏播种。
+
+        这一条同时挡住三种错：某个键忘了加、一个事件加了两次、
+        以及 ``EVENT_TYPES`` 增了类型而计数器的键集没跟着变。
+        它成立的前提是词表闭合（``EventVector`` 已经保证了这一点），
+        所以它一旦不成立，说明有人绕过了那道校验。
+        """
+
+        cfg = EnvironmentConfig(max_events=5)
+        env = Environment(cfg, seed=1)
+        for _ in range(20):
+            env.step(move(speed=0.5))
+        assert sum(env.event_counts().values()) == env._event_seq
+
+    def test_event_counts_are_keyed_by_the_closed_vocabulary(self) -> None:
+        """键集恰为 ``EVENT_TYPES``，含 0 值——稀疏 dict 会混掉"0 次"与"没测"。"""
+
+        from SSEA.sse_protocols import EVENT_TYPES
+
+        env = Environment(seed=1)
+        counts = env.event_counts()
+        assert set(counts) == set(EVENT_TYPES)
+        # 注意：**不是**全零。``__init__`` 末尾会 ``_diff_visibility()``，
+        # 那是构造期的第一次观测，本身就会发 OBJECT_FOUND。
+        # 所以"新环境计数器全零"这个直觉是错的——基线就是这条。
+        assert counts["OBJECT_FOUND"] > 0
+        assert counts["ACTION_SUCCESS"] == 0, "还没 step 过，不该有动作事件"
+
+    def test_event_counts_name_the_producerless_types(self) -> None:
+        """5 个类型恒为 0，因为**没有生产者**——钉住它，这是缺口不是成绩。
+
+        见 ``Environment.event_counts()`` 的 docstring。稀疏 dict 下这 5 个
+        只是"不出现"，没人会注意；全键含零之后它们是一行看得见的 0，
+        于是就有了被误读成"从没发生过"的风险——所以在这里把它写成断言。
+
+        **故意不断言"每个类型都有生产者"**：那会把套件在今天变红。
+        补 ``ENERGY_LOST`` / ``SKILL_*`` 的生产者是独立的一件事。
+        """
+
+        env = Environment(seed=1)
+        for _ in range(20):
+            env.step(move(speed=0.5))
+        counts = env.event_counts()
+        for event_type in (
+            "ENERGY_LOST",
+            "SKILL_SUCCESS",
+            "SKILL_FAILURE",
+            "SELF_MOD_APPLIED",
+            "SELF_MOD_ROLLBACK",
+        ):
+            assert counts[event_type] == 0, (
+                f"{event_type} 有生产者了——请更新 event_counts() 的 docstring "
+                f"与这条测试里的无生产者清单"
+            )
+
+    def test_event_counts_reset_with_the_world(self) -> None:
+        """``reset()`` 把计数带回**构造期基线**——否则会跨 FastLoop 实例累积。
+
+        ``FastLoop.__init__`` 会调 ``reset()``（见 fast_loop.py），
+        一个"活过 reset"的计数器会把上一轮的计数带进下一轮，
+        而且看起来完全正常。这是债务 10 同一形状的错，只是方向偏大。
+
+        **基线不是全零**：``reset()`` 自己末尾就 ``_diff_visibility()``，
+        会发 OBJECT_FOUND。所以判据是"回落到与新建时同一个基线"，
+        不是"归零"——写成归零会漏掉"reset 之后仍在涨"这种半吊子修法。
+        """
+
+        baseline = sum(Environment(seed=1).event_counts().values())
+        env = Environment(seed=1)
+        for _ in range(20):
+            env.step(move(speed=0.5))
+        assert sum(env.event_counts().values()) > baseline
+        env.reset()
+        assert sum(env.event_counts().values()) == baseline
+        # 同一个 seed 重建世界，基线事件也该一模一样。
+        assert env.event_counts() == Environment(seed=1).event_counts()
+        assert env._event_seq == baseline
+
+    def test_event_counts_returns_a_copy(self) -> None:
+        """返回副本——调用方改它不该动到内部状态。"""
+
+        env = Environment(seed=1)
+        env.step(move(speed=0.5))
+        before = env.event_counts()
+        before["ACTION_SUCCESS"] = 999
+        assert env.event_counts()["ACTION_SUCCESS"] != 999
+
+    def test_max_events_must_be_positive(self) -> None:
+        """``max_events=0`` 会让 ``del lst[:-0]`` 退化成不删——缓冲静默无界。"""
+
+        with pytest.raises(ValueError, match="max_events"):
+            EnvironmentConfig(max_events=0)
+
     def test_events_have_fixed_context_length(self, env: Environment) -> None:
         env.step(move(speed=1.0))
         for event in env.event_log():
@@ -593,6 +709,52 @@ class TestEvents:
         time, event_type, source, extra = notes[-1]
         assert event_type == "ACTION_FAILED"
         assert "nonexistent" in extra
+
+
+class TestNoRewardSurface:
+    """C9：SSEA 只有淘汰函数，没有评分函数。
+
+    这一组守的是**环境不该长出评分接口**。写法照
+    ``tests/test_verification_gate.py::test_gate_has_no_ranking_or_sorting_api``
+    ——按名字扫公开面。
+
+    **说清楚它守得住什么、守不住什么。** 它挡得住"有人给 Environment 加一个
+    ``reward()`` / ``fitness()`` 访问器"，挡不住"有人拿 ``event_counts()``
+    在快环里算个分数"。后者**没有物理屏障**：``FastLoop`` 手里就握着
+    ``self.environment``（fast_loop.py）。淘汰函数在模型之外、模型物理上碰不到，
+    但观察员面**没有**这种隔离，靠的是约定 —— 所以这几条测试是**约定的一部分**，
+    不是架构保证。写成"结构上进不了控制闭环"就过头了。
+    """
+
+    def test_environment_has_no_scoring_api(self) -> None:
+        public = [n for n in dir(Environment) if not n.startswith("_")]
+        for bad in ("reward", "score", "fitness", "rank", "best", "compare"):
+            assert bad not in public, f"Environment 出现了评分 API {bad!r}"
+
+    def test_environment_config_has_no_scoring_knob(self) -> None:
+        from dataclasses import fields
+
+        names = {f.name for f in fields(EnvironmentConfig)}
+        for bad in ("reward", "score", "fitness", "fitness_fn", "weight"):
+            assert bad not in names, f"EnvironmentConfig 出现了评分旋钮 {bad!r}"
+
+    def test_counter_is_not_in_the_perception_path(self) -> None:
+        """计数器不在 ``Observation`` / ``BodyState`` 的字段里。
+
+        **注意这条是既有事实的复述，不是新防线**：``EXPECTED_FIELDS``
+        （``tests/test_protocol_consistency.py``）已经把这两个类型的字段集
+        钉死了，所以本测试多挡不住任何东西。留着只是因为便宜，
+        且它把"感知输入里没有累计历史"这句话放在离计数器最近的地方。
+        """
+
+        from dataclasses import fields
+
+        for cls in (Observation, BodyState):
+            names = {f.name for f in fields(cls)}
+            assert "event_counts" not in names
+            assert not any("count" in n for n in names), (
+                f"{cls.__name__} 里出现了计数型字段——累积历史不该进感知输入"
+            )
 
 
 class TestOperationsMatchProtocol:
