@@ -405,7 +405,9 @@ class FastLoop:
         if not feedback.survived:
             return self._enter_dead(record)
 
-        # ---- 睡眠判定（08 §2.2）：入口必须窄，三条同时满足 ----
+        # ---- 睡眠判定（08 §2.2）：入口必须窄，两条同时满足 ----
+        # 08 §2.2 原本还有第三条 energy ≥ 0.7，2026-09-27 移除——它与疲劳判据
+        # 算术互斥，使这里恒不成立。推导见 metabolic_monitor.wants_sleep。
         if self.metabolic.wants_sleep(obs_next.body, obs_next):
             self._state = STATE_SLEEP
             self._sleep_frames_left = max(1, self.config.min_sleep_frames)

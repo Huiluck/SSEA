@@ -490,7 +490,6 @@ class TestSleepActuallyCompiles:
         """攒满 n 帧 RUN 才准睡。包装而非继承：判据本身仍归 MetabolicMonitor。"""
 
         inner = MetabolicMonitor(
-            sleep_energy_threshold=0.0,
             sleep_threat_threshold=1.1,
             sleep_fatigue_threshold=0.0,
         )

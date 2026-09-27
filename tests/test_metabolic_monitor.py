@@ -159,18 +159,18 @@ class TestObserve:
 
 
 class TestSleepJudgement:
-    """08 §2.2：三条同时满足才睡。刻意不用 OR——入口必须窄。"""
+    """08 §2.2：安全 + 疲劳，两条同时满足才睡。刻意不用 OR——入口必须窄。
 
-    def test_sleeps_when_all_three_hold(self, monitor: MetabolicMonitor) -> None:
+    08 §2.2 原文还有第三条 ``energy ≥ 0.7``，2026-09-27 移除：
+    它与疲劳判据在默认代谢参数下算术互斥（能量单调降、疲劳单调升），
+    交出的不是「收窄的入口」而是**空集**。见
+    ``TestEnergyDoesNotGateSleep`` 与 ``SSEA.metabolic_monitor`` 的推导。
+    """
+
+    def test_sleeps_when_all_conditions_hold(self, monitor: MetabolicMonitor) -> None:
         body = make_body(energy=0.9, fatigue=0.8)
         obs = make_observation(energy=0.9, fatigue=0.8, threat=0.0)
         assert monitor.wants_sleep(body, obs)
-
-    def test_blocked_by_low_energy(self, monitor: MetabolicMonitor) -> None:
-        body = make_body(energy=0.5, fatigue=0.8)
-        obs = make_observation(energy=0.5, fatigue=0.8)
-        assert not monitor.wants_sleep(body, obs)
-        assert monitor.sleep_blockers(body, obs) == ("energy_below_threshold",)
 
     def test_blocked_by_threat(self, monitor: MetabolicMonitor) -> None:
         body = make_body(energy=0.9, fatigue=0.8)
@@ -194,15 +194,46 @@ class TestSleepJudgement:
     def test_blockers_cover_every_condition(
         self, monitor: MetabolicMonitor
     ) -> None:
-        """三条全不满足时，三个 blocker 都必须报出来。"""
+        """判据里的每条都没满足时，每个 blocker 都必须报出来。"""
 
         body = make_body(energy=0.1, fatigue=0.1)
         obs = make_observation(energy=0.1, fatigue=0.1, threat=0.9)
         assert set(monitor.sleep_blockers(body, obs)) == {
-            "energy_below_threshold",
             "threat_imminent",
             "fatigue_insufficient",
         }
+
+
+class TestEnergyDoesNotGateSleep:
+    """能量**不参与**睡眠判定（2026-09-27 修订 08 §2.2）。
+
+    这一组守的是「移除 energy ≥ 0.7」这个决定本身：如果哪天有人把能量条件
+    加回来，下面两条会红，而不是让睡眠重新变成不可达的空集。
+    """
+
+    def test_starving_but_safe_and_tired_still_sleeps(
+        self, monitor: MetabolicMonitor
+    ) -> None:
+        body = make_body(energy=0.02, fatigue=0.9)
+        obs = make_observation(energy=0.02, fatigue=0.9, threat=0.0)
+        assert monitor.wants_sleep(body, obs)
+
+    def test_low_energy_is_not_a_blocker(self, monitor: MetabolicMonitor) -> None:
+        """能量低不构成 blocker——一个不影响结论的 blocker 会让
+        「为什么还不睡」的答案变成假话。"""
+
+        body = make_body(energy=0.01, fatigue=0.9)
+        obs = make_observation(energy=0.01, fatigue=0.9, threat=0.0)
+        assert monitor.sleep_blockers(body, obs) == ()
+
+    def test_energy_threshold_is_gone_not_merely_ignored(self) -> None:
+        """字段是**移除**，不是留着不读。
+
+        留一个不参与判定的阈值旋钮，就是文档里那种「看起来完成了，
+        其实没生效」的配置——有人会去调它，而调它什么也不会发生。
+        """
+
+        assert not hasattr(MetabolicMonitor(), "sleep_energy_threshold")
 
 
 class TestThresholdsAreConfigurable:
@@ -210,19 +241,15 @@ class TestThresholdsAreConfigurable:
 
     def test_thresholds_are_fields_not_constants(self) -> None:
         m = MetabolicMonitor(
-            sleep_energy_threshold=0.5,
             sleep_threat_threshold=0.5,
             sleep_fatigue_threshold=0.5,
         )
-        assert m.sleep_energy_threshold == 0.5
         assert m.sleep_threat_threshold == 0.5
         assert m.sleep_fatigue_threshold == 0.5
 
     def test_loosened_thresholds_change_behaviour(self) -> None:
         strict = MetabolicMonitor()
-        loose = MetabolicMonitor(
-            sleep_energy_threshold=0.3, sleep_fatigue_threshold=0.1
-        )
+        loose = MetabolicMonitor(sleep_fatigue_threshold=0.1)
         body = make_body(energy=0.4, fatigue=0.2)
         obs = make_observation(energy=0.4, fatigue=0.2)
         assert not strict.wants_sleep(body, obs)

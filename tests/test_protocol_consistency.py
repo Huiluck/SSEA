@@ -14,7 +14,7 @@ import importlib
 import inspect
 import pkgutil
 import re
-from typing import get_type_hints
+from typing import get_args, get_type_hints
 
 import pytest
 
@@ -413,3 +413,82 @@ class TestNoNaturalLanguageInLoop:
                 assert not pattern.search(f.name), (
                     f"{cls.__name__}.{f.name} 疑似自然语言字段"
                 )
+
+    def test_action_channels_have_no_unaccounted_text_field(self) -> None:
+        """``Action`` 六个通道**内部**的 str 字段必须逐个登记。
+
+        这条补的是一个**守卫缺口**，不是修一个违规。上面三条检查的覆盖面是：
+
+        - ``test_notes_is_the_only_free_text_field`` 的类集合是
+          ``Observation, Feedback, EventVector, MemoryItem``——**没有 Action**。
+        - ``test_action_has_no_string_command_field`` 只查 ``Action`` 的
+          **顶层**字段名（六个通道名），通道**内部**一个都没查。
+
+        于是 ``Manipulation.operation`` 这类字段从来没被任何检查看过一眼。
+        它们实际装的确实是名字（对象 id、操作码），所以**不是违规**；
+        但"没人检查过"与"检查过没问题"是两件事。
+
+        下表的用途是让**新增**一个 str 字段变成一次显式决定，
+        而不是悄悄溜过去。
+        """
+
+        # 通道字段是 ``X | None``（本次实测：直接 is_dataclass 判不出来，
+        # 会得到空列表然后"前提失效"——这个断言先于结论报了警）。
+        action_hints = get_type_hints(Action)
+        channel_types = []
+        for f in dataclasses.fields(Action):
+            hint = action_hints[f.name]
+            inner = [a for a in get_args(hint) if a is not type(None)]
+            candidate = inner[0] if inner else hint
+            assert dataclasses.is_dataclass(candidate), (
+                f"Action.{f.name} 不再是通道结构: {hint}"
+            )
+            channel_types.append(candidate)
+
+        found: set[str] = set()
+        for channel in channel_types:
+            for name, hint in get_type_hints(channel).items():
+                if hint is str:
+                    found.add(f"{channel.__name__}.{name}")
+
+        assert found == {
+            # 对象 id / 空串表示无目标 —— 名字
+            "Manipulation.target_id",
+            "Communication.target_id",
+            "SkillCall.skill_id",
+            # 操作码与提案类型 —— **名字，且约定取自闭集**
+            "Manipulation.operation",
+            "SelfModification.proposal_type",
+        }, f"Action 通道内出现了未登记的 str 字段: {sorted(found)}"
+
+    def test_opcode_fields_are_convention_bound_not_type_bound(self) -> None:
+        """记一笔已知的弱点：操作码字段**类型上不受约束**。
+
+        ``Manipulation.operation`` 与 ``SelfModification.proposal_type``
+        都只是 ``str``，只在 docstring 里约定"取值见 ``OPERATIONS`` /
+        ``ALLOWED_PROPOSAL_TYPES``"。协议层**没有**运行时校验：
+
+        >>> Manipulation(target_id="o1", operation="把那个东西拿过来", ...)
+        是能构造出来的。
+
+        这不是当前的实际风险——写出这两个字段的是 ActionDecoder 与
+        LocalPlasticity，它们只从闭集里取。真正的守卫是**运行时**的：
+        ``experiments/_harness.py::count_strs_deep`` 在跑起来之后逐帧
+        检查这两个字段的值有没有落在闭集里，实测 637 帧 0 次越界。
+
+        本测试固化的是"当前不受约束"这一事实，让将来某次收紧成
+        ``Literal[...]`` 或 ``__post_init__`` 校验时有人会注意到这里，
+        而不是让这个弱点在文档里烂掉。
+        """
+
+        from SSEA.sse_protocols.action import Manipulation
+        from SSEA.sse_protocols.action_space import OPERATIONS
+        from SSEA.sse_protocols.self_modification import ALLOWED_PROPOSAL_TYPES
+
+        hints = get_type_hints(Manipulation)
+        assert hints["operation"] is str, (
+            "operation 已不再是裸 str——若已收紧为 Literal/枚举，"
+            "请删掉本测试并更新 experiments/README.md 的守卫缺口一节"
+        )
+        # 闭集本身必须存在且非空，否则"取自闭集"是句空话。
+        assert OPERATIONS and ALLOWED_PROPOSAL_TYPES

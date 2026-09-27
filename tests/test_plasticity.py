@@ -651,7 +651,7 @@ def _sleep_once_after(n: int) -> MetabolicMonitor:
     """
 
     inner = MetabolicMonitor(
-        sleep_energy_threshold=0.0, sleep_threat_threshold=1.1, sleep_fatigue_threshold=0.0
+        sleep_threat_threshold=1.1, sleep_fatigue_threshold=0.0
     )
     fired = [False]
     asked = [0]

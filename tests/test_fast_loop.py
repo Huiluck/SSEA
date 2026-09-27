@@ -34,15 +34,15 @@ def sleepy_monitor() -> MetabolicMonitor:
     """阈值放宽到必然入睡——用来测状态机，不是用来测生存策略。"""
 
     return MetabolicMonitor(
-        sleep_energy_threshold=0.0,
         sleep_threat_threshold=1.1,
         sleep_fatigue_threshold=0.0,
     )
 
 
 def never_sleep_monitor() -> MetabolicMonitor:
+    """疲劳阈值取 2.0（疲劳上限是 1.0），故恒不入睡。"""
+
     return MetabolicMonitor(
-        sleep_energy_threshold=2.0,
         sleep_threat_threshold=0.0,
         sleep_fatigue_threshold=2.0,
     )
