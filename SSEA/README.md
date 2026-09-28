@@ -11,6 +11,10 @@
 （协议原文）+ [docs/03-architecture-spec.md](../docs/03-architecture-spec.md)
 第 5 节修订条款汇总表（19 条）。**凡 08 修订过的协议，以 08 为准，不以 07 原文为准。**
 
+> ⚠️ 本文中的 `07 §x` / `08 §x` / `12 §x` 是**整合前的旧编号**（`docs/` 现只剩 01–06），共 **30 处**。
+> **07 → [docs/03](../docs/03-architecture-spec.md) Part I、08 → 同篇 Part II**，节号原样保留；
+> 其余映射见 [docs/README.md](../docs/README.md) 的《旧编号 → 现文档映射》。
+
 ---
 
 ## 1. 目录结构

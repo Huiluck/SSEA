@@ -351,7 +351,7 @@ done
 | **[docs/03](docs/03-architecture-spec.md)** 架构规范 | **要动代码之前必读**（任务书 + 模糊地带补全，冲突以 Part II 为准） |
 | **[docs/04](docs/04-boundaries.md)** 边界参考 | 想知道「这算不算新架构」「边界怎么划」「哪些不做」 |
 | **[docs/05](docs/05-glossary.md)** 名词表 | 读到术语拿不准时查（「消费者」「承重」「基因先验」…） |
-| **[docs/06](docs/06-status-roadmap.md)** 现状与路线图 | **想知道「现在怎么样、往哪走、怎么复现」** |
+| **[docs/06](docs/06-status-roadmap.md)** 现状与路线图 | **想知道「现在怎么样、往哪走、怎么复现」**；附 C 是「**裁决 → 落地状态**」总表，读之前先查它，免得把「已裁决」当成「已实现」 |
 | [docs/README.md](docs/README.md) | 文档索引与推荐阅读路径 |
 
 ---

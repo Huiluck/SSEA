@@ -57,6 +57,7 @@ Gene Manager 未开跑；技能固化实验 3 实测 **0/33**（判据形状错�
 |---|---|---|
 | Dream-RSI | A/P1 | 发现历史即重放模拟器，慢环「做梦式」离线提案验证 |
 | Memento | A/P1 | 冻结 LLM + 案例库读写 + 可学习检索 μ（记忆侧主干） |
+| FLEX | B/P1 | 冻结 LLM + 分层经验库（golden/warning）+ updater 写入三分支；logistic 增长曲线作慢环停机判据（**记忆组织/写入侧主干**） |
 | PSN（Evolving Programmatic Skill Networks） | A/P1 | 技能即带契约的可执行网络：故障定位/成熟度门控/回滚验证重构（**技能侧主干**） |
 | Misevolve | A/P1 | 模型/记忆/工具/工作流四路径误演化威胁模型与红队验收清单 |
 | RAGEN | B/P1 | Echo Trap 诊断 + 不确定性过滤（参数侧训练诊断仪） |

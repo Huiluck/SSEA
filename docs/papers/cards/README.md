@@ -28,6 +28,7 @@
 | [MaAS](MaAS.分析卡片.md) | C 思想启发 | P2 | 架构超网分布 + 查询条件化早退 + 成本约束；L4 连续路线对照 ADAS |
 | [Genie](Genie.分析卡片.md) | B 零件采用 | P2 | 无监督生成可玩世界：潜在动作 + ST-Transformer + MaskGIT；Dream-RSI 的生成延续件 |
 | [Reflexion](Reflexion.分析卡片.md) | B 零件采用 | P2 | 试错-评估-反思外环经典形状 + 自写测试启发式；语言通道待去语言化 |
+| [ARISE](ARISE.分析卡片.md) | B 零件采用 | P1 | 两层 Cache/Reservoir 技能库生命周期协议 + 只判合法性的四阶段准入门 + 弃权门；「Intrinsic」为伪友（库内生≠内在驱动），层次奖励属奖励塑形，C1/C2/C9 冲突 |
 
 ## 裁决等级
 

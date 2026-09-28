@@ -4,6 +4,9 @@
 模型与生态系统的边界怎么定（B）、第一阶段明确不做什么（C）**。配套的设计立场见
 [01-philosophy.md](01-philosophy.md)，权威架构规范见 [03-architecture-spec.md](03-architecture-spec.md)。
 
+> ⚠️ 文中出现的 `09` / `10` / `11` 是**整合前的旧编号**，即本篇的 **Part A / Part B / Part C**；
+> 另有 `07` / `08` 等共 13 处。全表见 [README.md](README.md) 的《旧编号 → 现文档映射》。
+
 <a id="part-a"></a>
 ## Part A · 架构原创性说明
 **文档性质**：Milestone 0 交付物之一

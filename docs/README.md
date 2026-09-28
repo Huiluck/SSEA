@@ -25,7 +25,7 @@
 | [03-architecture-spec.md](03-architecture-spec.md) | **动手写代码前的权威依据**：v0.3.1 任务书（Part I）＋双环接口与模糊地带补全（Part II）＋**§8 三项裁决落地**（冲突时以 Part II 为准，其中 §8 优先于 Part II 前七节） |
 | [04-boundaries.md](04-boundaries.md) | **边界在哪**：架构原创性、模型/接口/生态边界定义表、第一阶段不做清单 |
 | [05-glossary.md](05-glossary.md) | **术语什么意思**：统一名词口径与权威出处（检索用） |
-| [06-status-roadmap.md](06-status-roadmap.md) | **此刻到哪、往哪走**：当前状态、实测数字、未结债务、里程碑路线图、M4 计划、复现方式 |
+| [06-status-roadmap.md](06-status-roadmap.md) | **此刻到哪、往哪走**：当前状态、实测数字、未结债务、里程碑路线图、M4 计划、复现方式 · **附 C 裁决 → 落地状态总表**（哪些裁决在代码里成立、哪些只是写在纸上）|
 
 ## 推荐路径
 
@@ -48,3 +48,59 @@
 本篇幅由早期 22 份文档（原始构想、多版任务书、Milestone 0 交付物、进度报告、总览与
 整合精读等）整合而成。被合并文档的完整原文保留在 git 历史中，需要时点的完整台账或
 逐增量记录时，可用 `git log` / `git show` 取回（指引见 [06](06-status-roadmap.md) 附录 A）。
+
+### 旧编号 → 现文档映射（**本表权威**）
+
+**为什么需要这张表。** 整合只留下了 6 篇（01–06），但正文、代码 docstring 与 `tests/`
+注释里仍在用**整合前的旧编号**（`07 §5.3`、`08 §2.1`、`14 §6.3.7` 之类）。实测指向旧编号的
+引用共 **163 处**：**35 处**是 Markdown 链接（已经指向现文件，点得开），
+**128 处是裸引用**（`14 §6.3.7` 这种，**没有任何跳转**，此前只能靠猜）。
+最重的一处是 [05-glossary.md](05-glossary.md)（**62 处**）——而名词表的核心承诺正是
+「**出处**：有分歧时以那里为准」，这条承诺此前对它的大部分条目是空头支票。
+
+**先说清楚能解析到哪一级**——这一点比映射本身更重要：
+
+| 级别 | 覆盖 | 怎么用 |
+|---|---|---|
+| ✅ **可解析到节** | `07` `08` | 二者分别**整篇**成为 [03](03-architecture-spec.md) 的 **Part I / Part II**，**节号原样保留**。`NN §x` → `[03](03-architecture-spec.md) Part I/II §x` |
+| 🟡 **只能解析到文件** | `05` `12` `13` `14` `16` | 被**合并**进现文档，**节号不对应**。要节级原文只能走 git |
+| ⚪ **不涉及** | `09` `10` `11` `15` `17` `18` | 现在只以链接出现，已经能定位 |
+
+| 旧编号 | 旧文件名（`64c8921`） | 现文档 | 节级 |
+|---|---|---|---|
+| **07** | `07-ssea-v0.3.1-charter.md` | [03-architecture-spec.md](03-architecture-spec.md) **Part I** | ✅ 节号保留 |
+| **08** | `08-dual-loop-interface-and-gap-closure.md` | [03-architecture-spec.md](03-architecture-spec.md) **Part II** | ✅ 节号保留 |
+| 05 | `05-ssea-v0.3-charter.md` | 已被 v0.3.1 任务书取代；其答辩修订并入 [03](03-architecture-spec.md) Part I 的修订背景 | ⚪ |
+| 09 | `09-architecture-originality.md` | [04-boundaries.md](04-boundaries.md) **Part A** | 🟡 |
+| 10 | `10-boundary-definition-table.md` | [04-boundaries.md](04-boundaries.md) **Part B** | 🟡 |
+| 11 | `11-phase1-not-doing-list.md` | [04-boundaries.md](04-boundaries.md) **Part C** | 🟡 |
+| 12 | `12-progress-report.md` | [06-status-roadmap.md](06-status-roadmap.md) | 🟡 合并 |
+| 13 | `13-milestone4-plan.md` | [06-status-roadmap.md](06-status-roadmap.md) **Part III** | 🟡 约等于，节号未保留 |
+| 14 | `14-overview-and-roadmap.md` | [06-status-roadmap.md](06-status-roadmap.md) | 🟡 合并 |
+| 15 | `15-glossary.md` | [05-glossary.md](05-glossary.md) | 🟡 表已重排 |
+| 16 | `16-project-summary.md` | [06-status-roadmap.md](06-status-roadmap.md) | 🟡 合并 |
+| 17 | `17-integrated-synthesis.md` | [06-status-roadmap.md](06-status-roadmap.md) | 🟡 合并 |
+| 18 | `18-architectural-philosophy.md` | [01-philosophy.md](01-philosophy.md) | 🟡 |
+| 19 | `19-nonverbal-cognition-foundation.md` | [02-nonverbal-cognition.md](02-nonverbal-cognition.md)（另含旧文件 `docs/思想层面的待完善处.md` → 本篇**附录**） | 🟡 未被引用，按标题推断 |
+| 01–04 · 06 | `01-vision` / `02-collaboration-scope` / `03-feasibility-v0.1` / `04-phase1-plan-draft` / `06-v0.3-rebuttal` | v0.3.1 **之前**的一代，内容并入 01 / 03 / 04，**几乎不再被引用**（仅 1 处） | ⚪ |
+
+**已逐条核实的节级对应**（只有这四条是查过的，其余不要照推）：
+
+| 旧引用 | 现位置 | 依据 |
+|---|---|---|
+| `12 §6`（债务台账） | [06](06-status-roadmap.md) **§4 债务现状** | 本篇 §4 自己写着「见旧进度报告 §6」 |
+| `14 §5.2`（三种坏数字） | [06](06-status-roadmap.md) **§3.4 读数字的纪律** | 三档标题与内容逐条对应 |
+| `16 §3.3`（描述被当判据 / options） | [02](02-nonverbal-cognition.md) **§3.3** | 理论论证整段搬入 |
+| `08 §2.1`（结构注入面） | [03](03-architecture-spec.md) **Part II §2.1** | 节号即原号 |
+
+其余节级原文用 git 取回：
+
+```bash
+git show 64c8921:docs/14-overview-and-roadmap.md    # 旧编号换成文件名即可
+```
+
+> ⚠️ **维护纪律（双向）**：**新增引用一律用现编号**（写成 `[03](03-architecture-spec.md) §8.3`），
+> 不要再写旧编号。本表是**用来清零旧账的，不是永久别名表**——它若只增不减，就变成了
+> 第二套编号系统，比没有更糟。（同一条纪律的另一个实例见
+> [`tests/test_consumer_surface.py`](../tests/test_consumer_surface.py) 的 `NO_CONSUMER_YET`：
+> 登记表必须**双向**断言，长了消费者就要移出，否则清单会烂掉。）
