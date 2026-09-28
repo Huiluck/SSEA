@@ -107,12 +107,10 @@
 | **被用作评测场** | **SkillRL**（WebShop 85.2 分 / 72.7%）、**RAGEN**（WebShop 多轮随机域）、**RetroAgent**（WebShop 78.9–82.3%）、**EarlyExperience**（WebShop 60.2%）、**ExperienceSynthesis**（DreamGym on WebShop）、**SkillNet**（WebShop 平均奖励 +40%） | 均以 WebShop 作网页域评测场——**本卡是这些卡的共同上游** |
 | **同族（非同一环境）** | **WebRL**（其评测场为 **WebArena-Lite**，非 WebShop；卡片 §2.5） | 二者同属「网页智能体评测场」族；WebRL 的 ORM 判成败与本篇 Eq.1 是**同一 C9 议题的两种答案**（学习型判官 vs 规则型判据） |
 | 互补 / 警示 | **PSN / SkillWeaver**（判据形状可作技能契约通过条件）；**Misevolve**（「环境对无消费者通道报成功」是误演化的一种） | 技能侧与红队清单 |
-| 替代 | 无 | 本卡只提供判据形状，不替代任何组件 |
+| 替代 | 无（本卡只提供判据形状，不替代任何组件） | — |
 ### 6.2 推荐组合方案
-- **组合**：WebShop 判据形状 × SSEA 四级验证门（环境实测档）。
-- **接口形态**：把 Eq.1 改写为二值门 —— `通过 ⟺ 类型门为真 ∧ 每个必要性分项覆盖 = 1`，分母取需求项数。
-- **组合后新增能力**：淘汰函数获得**显式分母 + 分项可核 + 必要性门**三件套，可诊断「假成功」。
-- **新增风险**：属性抽取若不自动化，会把人工标注依赖偷偷带进 SSEA 淘汰链路。
+- **组合 / 接口形态**：WebShop 判据形状 × SSEA 四级验证门（环境实测档）——把 Eq.1 改写为二值门 `通过 ⟺ 类型门为真 ∧ 每个必要性分项覆盖 = 1`，分母取需求项数。
+- **组合后新增能力 / 新增风险**：淘汰函数获得**显式分母 + 分项可核 + 必要性门**三件套，可诊断「假成功」；但属性抽取若不自动化，会把人工标注依赖带进 SSEA 淘汰链路。
 ### 6.3 本篇在组合中的典型角色
 **判据形状参照标本 / 多篇已读卡片的共同评测场**——它管的是「成败怎么被环境无歧义地判出来」，而非「智能体怎么长出来」。
 
@@ -130,11 +128,7 @@
 - **应用等级：D 基准对照** —— 理由：它是环境而非智能体架构，C1–C8 大面积 ✗；但其 **C9 判据构造形状**是可搬运的稀缺参照（分母显式、分项可核、必要性门、合约束即成功）。
 - **优先级：P2**（高于短卡默认 P3，因直击债务 25–28）。
 - **建议动作**：① 把 Eq.1 写成 SSEA 环境侧淘汰函数的**规格草稿**（`必要性门 × 分项覆盖率`，输出**二值**而非分数）；② 用该规格重写技能固化实验 3 的判据（当前 0/33，疑为判据形状错），**先看分母**；③ 属性抽取自动化方案单列（去掉人工复核依赖）。
-- **最小验证实验**：
-  - **双臂**：现行判据 vs WebShop 形状重写判据（类型门 + 分项分母 + 二值化），其余不变，≥8 seed。
-  - **判据分档**：机制计数（判据触发次数/分母）→ 行为差 → 淘汰结果；**先看分母是否非零**。
-  - **预期**：重写后技能固化成功数从 0/33 上升，且失败样本可被分项定位。
-  - **证伪条件**：分母正常、行为无差 → 判据形状不是主因，问题转向「技能表示够不够」。
+- **最小验证实验**：**双臂** = 现行判据 vs WebShop 形状重写判据（类型门 + 分项分母 + 二值化），其余不变，≥8 seed；**判据分档** = 机制计数（判据触发次数/分母）→ 行为差 → 淘汰结果，**先看分母是否非零**；**预期** = 重写后技能固化成功数从 0/33 上升且失败样本可被分项定位；**证伪条件** = 分母正常而行为无差 → 判据形状不是主因，问题转向「技能表示够不够」。
 - **若 E 不采用**：不适用（本卡为 D）。
 
 ## 9. 待确认问题
@@ -145,13 +139,10 @@
 ## 附：关键摘录与出处
 | 摘录 | 页码 |
 |---|---|
-| 规模：“1.18 million real-world products and 12,087 crowd-sourced text instructions” | 摘要 p1 |
-| “our best model achieves a task success rate of **29%** … rule-based heuristics (**9.6%**) … human expert (**59%**)” | 摘要 p1 |
+| 规模：“1.18 million real-world products and 12,087 crowd-sourced text instructions”；“our best model achieves a task success rate of **29%** … rule-based heuristics (**9.6%**) … human expert (**59%**)” | 摘要 p1 |
 | “Yatt, a set of attributes **hidden from the agent** … used for the automatic reward calculation” | §3.1 p4 |
-| **Eq.1**：`r = rtype · (|Uatt∩Yatt| + |Uopt∩Yopt| + 1[yprice≤uprice]) / (|Uatt|+|Uopt|+1)` | p5 |
-| “it is possible to obtain r=1 … even if the final product is not y*” | §3.1 p5 |
+| **Eq.1**：`r = rtype · (|Uatt∩Yatt| + |Uopt∩Yopt| + 1[yprice≤uprice]) / (|Uatt|+|Uopt|+1)`；同页：“it is possible to obtain r=1 … even if the final product is not y*” | p5 |
 | “we review the top 200 bi-grams for each category, remove the noisy ones **by inspection** … a pool of 670 attributes” | §3.2 p5 |
 | Fig.4：Rule 45.6/9.6%；IL 59.9/29.1%；IL+RL 62.4/28.7%；人类 82.1/59.9%（3 trials） | p8 |
-| “RL fine-tuning … average trajectory length drops from 9.4 to 4.8 … option score drops from 45.2 to 38.9” | §5.3 p8 |
+| “RL fine-tuning … average trajectory length drops from 9.4 to 4.8 … option score drops from 45.2 to 38.9”；长期记忆未解：“demonstrating long-term memory that is **lacking** in the IL+RL model” | §5.3 p8–9 |
 | Table 4：Choice oracle 使 Rule 9.6→52.6%、IL 29.1→57.6%；“manually score each episode based on Eq.(1)”（sim-to-real），人类 815 s/集 vs 模型 <8 s | p9–10 |
-| 长期记忆未解：“demonstrating long-term memory that is **lacking** in the IL+RL model” | §5.3 p9 |

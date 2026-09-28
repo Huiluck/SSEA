@@ -54,14 +54,17 @@
 from __future__ import annotations
 
 import sys
+from dataclasses import dataclass
 
 from SSEA.instinct import preset_blob
-from SSEA.skill_library import candidate_counts
+from SSEA.skill_library import candidate_counts, direct_success_frames
 from SSEA.sse_protocols.induction_funnel import InductionFunnel, diagnose
 from experiments._harness import (
     DEFAULT_FRAMES,
+    survival_summary,
     DEFAULT_SEEDS,
     EpisodeResult,
+    build_budget_matched_slow_loop,
     build_slow_loop,
     mean_defined,
     print_matrix,
@@ -86,9 +89,26 @@ def fresh_store():
     return store
 
 
-def run_arm(
-    arm: str, frames: int
-) -> tuple[list[EpisodeResult], list[int], list[int], list[InductionFunnel | None]]:
+@dataclass
+class ArmRun:
+    """一臂的产物。
+
+    ``compiled`` 与 ``published`` 分开是**预算匹配臂存在的全部理由**：
+
+    - ``compiled``：慢环**算出**了几条技能（弃置场上的增长也算）；
+    - ``published``：几条**真的进了快环快照**。
+
+    只报一个数时，「结构有用」与「慢环跑过一遍有用」被绑在一起，读数分不开。
+    """
+
+    results: list[EpisodeResult]
+    compiled: list[int]
+    published: list[int]
+    seeded: list[int]
+    funnels: list[InductionFunnel | None]
+
+
+def run_arm(arm: str, frames: int) -> ArmRun:
     """跑一臂。返回 ``(逐 seed 结果, 逐 seed 新增技能数, 逐 seed 播种前技能数, 逐 seed 漏斗)``。
 
     漏斗是**三档分母**（attempted / passed / reused）的载体：0/33 曾经是**一个**
@@ -100,17 +120,35 @@ def run_arm(
     """
 
     results: list[EpisodeResult] = []
-    gained: list[int] = []
+    compiled: list[int] = []
+    published: list[int] = []
     seeded: list[int] = []
     funnels: list[InductionFunnel | None] = []
 
     for seed in DEFAULT_SEEDS:
         store = fresh_store()
         before = len(store.snapshot().skills)
-        counts = {"windows": 0, "positive": 0}
+        counts = {"windows": 0, "positive": 0, "calls": 0, "ds": 0}
+        compile_store = store
         if arm == "固化关":
             # **不是 None**——None 会让 run_episode 建默认慢环（见模块 docstring）。
             slow_loop = lambda trace: None  # noqa: E731
+        elif arm == "预算匹配":
+            # **慢环照跑**，绑到弃置场：睡眠帧数、调用次数、编译与门控的计算
+            # 与「固化开」逐位相同，唯一差别是**产物不进入快环快照**。
+            compile_store = fresh_store()
+            inner = build_budget_matched_slow_loop(
+                throwaway=compile_store, plasticity=False
+            )
+
+            def slow_loop(trace, _inner=inner, _counts=counts):
+                _counts["calls"] += 1
+                _counts["ds"] = direct_success_frames(trace)
+                windows, positive = candidate_counts(trace)
+                _counts["windows"] = windows
+                _counts["positive"] = positive
+                return _inner(trace)
+
         else:
             # plasticity=False：只要技能固化，不要阈值自纠（归因见模块 docstring）。
             inner = build_slow_loop(store, plasticity=False)
@@ -119,22 +157,37 @@ def run_arm(
                 # 漏斗头两档的分母。``candidate_counts`` 用**默认** SkillLibraryConfig
                 # ——与慢环内部那一份同源；若哪天两者分叉，InductionFunnel 的单调性
                 # 检查会**直接抛错**，不会静默算出一个对不上的数。
+                #
+                # **覆盖，不累加。** 慢环每次拿到的是**整条** trace（不是增量），
+                # 累加会把同一段窗数重复计几次——2026-09-29 实测：3 次调用把
+                # 4 窗 1 候选算成了 8 窗 2 候选。用最后一次（最长的）trace 才是
+                # 「这条 episode 里切出了多少窗」。
+                _counts["calls"] += 1
+                _counts["ds"] = direct_success_frames(trace)
                 windows, positive = candidate_counts(trace)
-                _counts["windows"] += windows
-                _counts["positive"] += positive
+                _counts["windows"] = windows
+                _counts["positive"] = positive
                 return _inner(trace)
 
         result = run_episode(seed, frames=frames, store=store, slow_loop=slow_loop)
         after = len(store.snapshot().skills)
+        grown = len(compile_store.snapshot().skills) - before
         results.append(result)
-        gained.append(after - before)
+        published.append(after - before)
+        compiled.append(grown)
         seeded.append(before)
-        if arm == "固化关":
+        if arm == "固化关" or arm == "预算匹配":
+            # **不建漏斗。** 固化关没有慢环（没有候选可谈）；预算匹配臂的发布
+            # 被**按设计**切断，漏斗的后三档对它没有意义——硬填会得到
+            # `REJECTED_BY_GATE` 或 `NEVER_INVOKED`，把「设计如此」误诊成「病了」。
+            # 与 §11.8 给固化关不建漏斗是同一条理由。
             funnels.append(None)
         else:
             funnels.append(
                 InductionFunnel(
                     frames=result.frames,
+                    slow_loop_calls=counts["calls"],
+                    direct_success_frames=counts["ds"],
                     windows=counts["windows"],
                     positive=counts["positive"],
                     # 去重后的候选：本臂每个 seed 一份新 store，故新增数即入库数；
@@ -145,7 +198,7 @@ def run_arm(
                 )
             )
 
-    return results, gained, seeded, funnels
+    return ArmRun(results, compiled, published, seeded, funnels)
 
 
 def main(argv: list[str] | None = None) -> int:
@@ -154,16 +207,27 @@ def main(argv: list[str] | None = None) -> int:
 
     print(f"实验 3：技能固化    {len(DEFAULT_SEEDS)} seed × {frames} 帧上限")
     print(
-        "两臂：固化关 = lambda trace: None（**不是 None**）；"
-        "固化开 = build_slow_loop(store, plasticity=False)。\n"
-        "两臂都播种同一份本能（approach + grasp_in_reach），每个 (臂, seed) 一份新 store。"
+        "三臂：固化关 = lambda trace: None（**不是 None**）；"
+        "固化开 = build_slow_loop(store, plasticity=False)；"
+        "预算匹配 = 慢环**照跑**但绑到弃置场（产物不发布）。\n"
+        "三臂都播种同一份本能（approach + grasp_in_reach），每个 (臂, seed) 一份新 store。\n"
+        "「预算匹配」是 HarnessEval 意义的**预算匹配基线**：它把「结构进入快环」与\n"
+        "「慢环跑过一遍」分开——只做开/关消融时这两件事被绑在一起，读数分不开。"
     )
 
-    arms = ("固化关", "固化开")
+    arms = ("固化关", "固化开", "预算匹配")
     data = {arm: run_arm(arm, frames) for arm in arms}
 
+    # 上限与实测分开印（债务 31）：不印它，「× 200 帧上限」会被读成「跑了 200 帧」。
     for arm in arms:
-        results, gained, seeded, _funnels = data[arm]
+        print(
+            f"  [{arm}] "
+            f"{survival_summary(data[arm].results, frames).headline(frames)}"
+        )
+
+    for arm in arms:
+        run = data[arm]
+        results, seeded = run.results, run.seeded
         print(f"\n{'=' * 78}\n臂：{arm}\n{'=' * 78}")
         print_matrix(
             results,
@@ -180,27 +244,37 @@ def main(argv: list[str] | None = None) -> int:
             ),
         )
         print("  —— 技能生成（播种前 → 跑完后）——")
-        for r, before, delta in zip(results, seeded, gained):
+        for r, before, made, pub in zip(results, seeded, run.compiled, run.published):
             print(
-                f"  seed {r.seed:>4}:        {before} → {before + delta}"
-                f"    （新增 {delta}）  提案={r.proposals} 应用={r.applied} 驳回={r.rejected}"
+                f"  seed {r.seed:>4}:        {before} → {before + pub}"
+                f"    （发布 {pub} / 慢环编译 {made}）  "
+                f"提案={r.proposals} 应用={r.applied} 驳回={r.rejected}"
             )
 
     # ---- 验收指标（两臂并排）----
     rows: list[tuple[str, object]] = []
     for arm in arms:
-        results, gained, _, _funnels = data[arm]
+        run = data[arm]
+        results = run.results
         rate, rate_n = mean_defined([r.skill_call_success_rate for r in results])
+        run_rate, run_rate_n = mean_defined([r.run_action_success_rate for r in results])
+        survival = survival_summary(results, frames)
         change, change_n = mean_defined([r.energy_change for r in results])
         windowed = sum(1 for r in results if r.energy_windows >= 2)
         rows.extend(
-            (
-                (f"[{arm}] 技能生成数量（合计）", sum(gained)),
-                (f"[{arm}] 其中有新技能的 seed",
-                 f"{sum(1 for g in gained if g > 0)}/{len(gained)}"),
+            # 存活帧排在最前：它是**淘汰函数的输出**（C9 归环境），而其余都是机制计数。
+            survival.rows()
+            + (
+                (f"[{arm}] 技能**发布**数量（合计；长度混杂，仅作规模参考）",
+                 sum(run.published)),
+                (f"[{arm}] 慢环**编译**数量（合计）", sum(run.compiled)),
+                (f"[{arm}] 其中有发布技能的 seed",
+                 f"{sum(1 for g in run.published if g > 0)}/{len(run.published)}"),
                 (f"[{arm}] 技能调用成功率", f"{rate}  (n={rate_n})"),
                 (f"[{arm}] 技能调用帧数（合计）", sum(r.skill_calls for r in results)),
                 (f"[{arm}] 运行器事件数（合计）", sum(r.skill_events for r in results)),
+                # 动作侧的分母：没有它，「动作全失败」与「没跑过」在 0 上长得一样。
+                (f"[{arm}] RUN 帧动作成功率", f"{run_rate}  (n={run_rate_n})"),
                 (f"[{arm}] 能量消耗变化（末−首窗口）", f"{change}  (n={change_n})"),
                 (f"[{arm}] —— 有 ≥2 个版本窗口的 seed", f"{windowed}/{len(results)}"),
                 ("", ""),
@@ -210,28 +284,33 @@ def main(argv: list[str] | None = None) -> int:
 
     # ---- 三档分母：0/33 是哪一种零 ----
     funnel_rows: list[tuple[str, object]] = []
-    for arm, funnels in ((a, data[a][3]) for a in arms):
-        for seed, funnel in zip(DEFAULT_SEEDS, funnels):
+    for arm in arms:
+        for seed, funnel in zip(DEFAULT_SEEDS, data[arm].funnels):
             if funnel is None:
-                funnel_rows.append((f'[{arm}] seed {seed}', '无慢环（对照臂，不建漏斗）'))
+                why = (
+                    '不建漏斗：发布被**按设计**切断（预算匹配臂）'
+                    if arm == '预算匹配'
+                    else '不建漏斗：没有慢环（对照臂）'
+                )
+                funnel_rows.append((f'[{arm}] seed {seed}', why))
                 continue
             d = diagnose(funnel)
             funnel_rows.append((
                 f'[{arm}] seed {seed}',
-                f'窗 {funnel.windows} → 候选 {funnel.attempted} → 去重 {funnel.new_candidates} → '
-                f'入库 {funnel.passed} → 复用 {funnel.reused}'
+                f'慢环 {funnel.slow_loop_calls} 次 → 直接成功帧 {funnel.direct_success_frames} → '
+                f'窗 {funnel.windows} → 候选 {funnel.attempted} → '
+                f'去重 {funnel.new_candidates} → 入库 {funnel.passed} → 复用 {funnel.reused}'
                 f'　→　{d.code}：{d.next_action}',
             ))
     print_table('技能固化漏斗（三档分母 attempted / passed / reused）', funnel_rows)
 
-    reused_total = sum(
-        len(r.invoked_skills) for r in data['固化开'][0]
-    )
-    committed_total = sum(data['固化开'][1])
+    open_run = data['固化开']
+    reused_total = sum(len(r.invoked_skills) for r in open_run.results)
+    committed_total = sum(open_run.published)
     print(
         f'\n  固化开臂合计：入库 {committed_total} 条，被**真正调用过**的不同技能 '
-        f'{reused_total} 个；调用 {sum(r.skill_calls for r in data["固化开"][0])} 次、'
-        f'事件 {sum(r.skill_events for r in data["固化开"][0])} 次。\n'
+        f'{reused_total} 个；调用 {sum(r.skill_calls for r in open_run.results)} 次、'
+        f'事件 {sum(r.skill_events for r in open_run.results)} 次。\n'
         '  **「0/33」说的不是「没有技能被复用」，而是「33 次调用全落在同一（少数）'
         '条技能上，且全部失败」。** 这两句话指向完全不同的下一步：前者改调用面，'
         '后者改那一条技能的判据/表示。三档分母的作用就是把它们分开。'
@@ -242,12 +321,12 @@ def main(argv: list[str] | None = None) -> int:
         "技能事件的两个来源（交叉验证 ``Environment.event_counts()`` 的坑）",
         tuple(
             (f"[{arm}] 运行器报出的事件（trace 上的 skill_event）",
-             sum(r.skill_events for r in data[arm][0]))
+             sum(r.skill_events for r in data[arm].results))
             for arm in arms
         )
         + tuple(
             (f"[{arm}] 环境计数器 event_counts()['SKILL_SUCCESS']",
-             sum(r.event_totals.get("SKILL_SUCCESS", 0) for r in data[arm][0]))
+             sum(r.event_totals.get("SKILL_SUCCESS", 0) for r in data[arm].results))
             for arm in arms
         ),
     )

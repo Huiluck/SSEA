@@ -102,16 +102,19 @@ METRICS: tuple[tuple[str, Sampler, str, str, bool], ...] = (
 def _declaration(name: str, bound: str, can_go_red: bool) -> JudgementDeclaration:
     """现有验收实验的**如实登记**。
 
-    `matched_baseline=''` 与 `search_seeds == eval_seeds` 都是如实填的，不是为了让
-    它变红好写报告：SSEA 现有两臂是「机制开 / 机制关」的**消融**，不是 HarnessEval
-    意义上的**预算匹配基线**（同等反馈预算下多试 K 次 / 重置）；而技能是在 seed i 上
-    编译、又在同一个 seed i 上测调用的。这两条本来就该红，红了才知道下一步改什么。
+    `matched_baseline` 于 **2026-09-29 由「无」改为「预算匹配臂」**：实验 2 / 3 各
+    多了一条预算匹配臂（处理臂多花的那部分算力被单独控制住，见 `_harness`）。
+    H5 此前是红的，现在应当变绿——**没绿就说明臂接了但登记没跟上**。
+
+    `search_seeds == eval_seeds` **仍然是如实填的**：技能在 seed i 上编译、又在同一个
+    seed i 上测调用，搜索集与评测集没分离。那条要样本量减半，须与 `GenEnv` 的
+    样本量界合并裁决，不能单独拍。
     """
 
     return JudgementDeclaration(
         name=name,
         bound=bound,
-        matched_baseline='',
+        matched_baseline='预算匹配臂（慢环 / 记忆照跑，产物不发布）',
         search_seeds=DEFAULT_SEEDS,
         eval_seeds=DEFAULT_SEEDS,
         reported_as='pass@1',
@@ -127,13 +130,17 @@ def main(argv: list[str] | None = None) -> int:
     print('跑的是既有两臂，不改任何行为；输出是**判据的体检报告**，不是实验结果。')
 
     bundles: dict[str, Bundle] = {}
-    for name, factory in EXP2_ARMS:
-        bundles[f'exp2/{name}'] = {'results': exp2_run_arm(name, factory, frames), 'gained': None}
+    for name, factory, budget in EXP2_ARMS:
+        bundles[f'exp2/{name}'] = {
+            'results': exp2_run_arm(name, factory, frames, budget), 'gained': None,
+        }
     for arm in ('固化关', '固化开'):
-        results, gained, _seeded, _funnels = exp3_run_arm(arm, frames)
-        bundles[f'exp3/{arm}'] = {'results': results, 'gained': gained}
+        run = exp3_run_arm(arm, frames)
+        # ``published``（真进快环快照的条数），不是 ``compiled``——判据问的是
+        # 「技能有没有真的生效」，不是「慢环算出了几条」。
+        bundles[f'exp3/{arm}'] = {'results': run.results, 'gained': run.published}
 
-    exp2_names = tuple(f'exp2/{n}' for n, _ in EXP2_ARMS)
+    exp2_names = tuple(f'exp2/{n}' for n, _f, _b in EXP2_ARMS)
     exp3_names = ('exp3/固化关', 'exp3/固化开')
 
     rows: list[tuple[str, object]] = []
@@ -181,9 +188,11 @@ def main(argv: list[str] | None = None) -> int:
         print(f'  - {name}：{" ".join(ids)}')
     print(
         '\n判读须知：\n'
-        '1. **H5 / H6 全红是如实的，不是脚本苛刻。** 现有两臂是「机制开/关」消融，\n'
-        '   没有 HarnessEval 意义上的预算匹配基线；技能在 seed i 上编译又在同一 seed i\n'
-        '   上测调用，搜索集与评测集没分离。这两条是**下一轮实验设计要改的**。\n'
+        '1. **H5 已于 2026-09-29 转绿**（实验 2 / 3 各补了一条预算匹配臂）；\n'
+        '   **H6 仍全红是如实的**：技能在 seed i 上编译又在同一 seed i 上测调用，\n'
+        '   搜索集与评测集没分离。那条要样本量减半（8 seed → 4+4），\n'
+        '   须与 GenEnv 的样本量界合并裁决。\n'
+        '   若哪天 H5 又变红，先查「臂接了没有」，再查「登记跟上了没有」。\n'
         '2. **UNKNOWN 不是通过。** 未声明的条目要么补登记，要么改实验——不要读成「没问题」。\n'
         '3. 本脚本只体检，不给结论。降级/弃用一条判据是裁决，写在 docs/03 §11 里。'
     )

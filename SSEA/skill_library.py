@@ -549,6 +549,23 @@ def _segments(
     return tuple((chunk, total) for chunk, total in _windowed(trace, cfg) if total > 0.0)
 
 
+def direct_success_frames(trace: Sequence[StepRecord]) -> int:
+    """满足 ``_is_direct_success`` 四条件的**帧数** —— 漏斗里在「窗」之前的那个分母。
+
+    **没有它，「零窗」会把三种病显示成一个**（2026-09-29 实测）：
+
+    - 慢环一次没被调用（整轮没进睡眠）；
+    - 慢环跑了，但**一帧都没满足直接成功**（动作侧：环境全拒）；
+    - 有直接成功帧，但不足 ``min_frames`` 或净收益非正。
+
+    三者指向三个不同的下一步，而 ``windows == 0`` 时它们**完全一样**。
+
+    它与切窗走同一份 ``_is_direct_success``——写成两份必然漂移。
+    """
+
+    return sum(1 for rec in trace if _is_direct_success(rec))
+
+
 def candidate_counts(
     trace: Sequence[StepRecord], config: SkillLibraryConfig | None = None
 ) -> tuple[int, int]:

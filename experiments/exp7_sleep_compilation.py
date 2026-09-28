@@ -38,6 +38,7 @@ import sys
 
 from experiments._harness import (
     DEFAULT_FRAMES,
+    survival_summary,
     DEFAULT_SEEDS,
     build_slow_loop,
     print_matrix,
@@ -72,6 +73,8 @@ def main(argv: list[str] | None = None) -> int:
         ),
     )
 
+    # 上限与实测分开印（债务 31）。
+    print("  " + survival_summary(results, frames).headline(frames))
     entered = sum(1 for r in results if r.sleep_entry)
     episodes = sum(r.sleep_episodes for r in results)
     calls = sum(r.slow_loop_calls for r in results)

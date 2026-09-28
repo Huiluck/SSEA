@@ -99,7 +99,12 @@ from SSEA.verification_gate import GateConfig, VerificationGate
 #: 实验默认用的随机种子集。八个足够看出「一半 seed 门不开」这类双峰现象。
 DEFAULT_SEEDS: tuple[int, ...] = tuple(range(8))
 
-#: 实验默认帧数。够跑到默认世界里的自然死亡（60–90 帧），留一倍余量。
+#: 实验默认**上限**帧数。够跑到默认世界里的自然死亡（60–90 帧），留一倍余量。
+#:
+#: ⚠️ **它是上限，不是分母。** 2026-09-29 实测：8/8 个 seed 全部在 **66–182** 帧死亡，
+#: **0/8** 活到 200；真实分母是**死亡帧**。所有派生量的分母都取自 ``len(trace)``，
+#: 但这个上限**从未被任何一张表印出来**——于是「× 200 帧上限」会被读成「跑了 200 帧」。
+#: 报告层因此补了 :func:`survival_summary`（见 docs/06 §4 债务 31）。
 DEFAULT_FRAMES = 200
 
 
@@ -208,6 +213,12 @@ class EpisodeResult:
     #: 从事件计数器读会得到"一次都没调用过"，而真相可能在调用（还会失败）。
     skill_successes: int = 0
     skill_failures: int = 0
+    # ---- 动作侧的分母（债务 30 的兄弟；2026-09-29 补）----
+    #: RUN 帧里动作成功 / 失败的帧数。**「动作全失败」这一档需要它才可归因**：
+    #: 只看 `ACTION_FAILED` 计数看不出它占 RUN 帧的多大比例。
+    #: 实测 3/8 个 seed 的 RUN 成功率是 **0**——它们靠睡眠活着。
+    run_success_frames: int = 0
+    run_failed_frames: int = 0
     #: **被真正调用过**至少一次的技能 id（去重、排序）。
     #:
     #: 它是技能固化漏斗第三档 ``reused`` 的分子：**不同技能的个数**，不是调用
@@ -233,6 +244,19 @@ class EpisodeResult:
     extra: dict[str, Any] = field(default_factory=dict)
 
     # ---- 派生指标（12 §4.2 表格里的那几列）----
+
+    @property
+    def run_action_success_rate(self) -> float | None:
+        """RUN 帧的动作成功率。**分母为 0 → `None`，不是 `0.0`。**
+
+        「一帧 RUN 都没跑过」与「跑了但一次没成功」是两件事，在 `0.0` 上长得一样。
+        2026-09-29 实测：8 个 seed 里有 **3 个**是 0——它们靠睡眠活着。
+        """
+
+        total = self.run_success_frames + self.run_failed_frames
+        if total == 0:
+            return None
+        return self.run_success_frames / total
 
     @property
     def action_legality_rate(self) -> float:
@@ -401,6 +425,72 @@ class EpisodeResult:
         return self.skill_successes / events
 
 
+@dataclass(frozen=True)
+class SurvivalSummary:
+    """存活读数的**唯一一份口径**（docs/06 §4 债务 31）。
+
+    **为什么它是一等公民**：C9 把「淘汰」判给环境，而「活了多少帧」就是**淘汰函数的
+    直接输出**——它因此是本项目**唯一一条模型碰不到的读数**。
+
+    而 2026-09-29 实测：8/8 个 seed 全部在 **66–182** 帧死亡（中位 122.5），**0/8**
+    活到 200 帧上限。可七条实验都在报机制计数，**没有任何一张表把「死亡」印出来**。
+
+    **为什么要有它、而不是各实验各写一遍**：措辞会漂；漂了之后「上限 200」与
+    「实测存活 122.5」就会再次被读成同一件事——那正是它要防的误读。
+    """
+
+    n: int
+    died: int
+    median_frames: float | None
+    low: int | None
+    high: int | None
+    at_cap: int
+
+    def headline(self, cap: int) -> str:
+        """一行话，**把上限与实测分开放**——它们不是一回事。"""
+
+        if self.median_frames is None:
+            return f"帧上限 {cap}（一轮都没跑起来）"
+        return (
+            f"帧上限 {cap}，实测存活 {self.low}–{self.high}"
+            f"（中位 {self.median_frames:g}），{self.n - self.at_cap}/{self.n} 未活到上限"
+        )
+
+    def rows(self) -> tuple[tuple[str, object], ...]:
+        """放进验收指标表**最前面**——它是环境那一侧的判据。"""
+
+        if self.median_frames is None:
+            return (("存活帧（淘汰函数输出；模型不可见）", "无"),)
+        return (
+            (
+                "存活帧（淘汰函数输出；模型不可见）",
+                f"中位 {self.median_frames:g} · 范围 {self.low}–{self.high} · n={self.n}",
+            ),
+            ("死亡 / 活到上限的 seed 数", f"{self.died}/{self.n} · {self.at_cap}/{self.n}"),
+        )
+
+
+def survival_summary(
+    results: Sequence[EpisodeResult], cap: int
+) -> SurvivalSummary:
+    """逐 seed 的**实际**存活帧（``r.frames`` = ``len(trace)``），**不是**那个上限。
+
+    ``cap`` 只用来算「有几个活到了上限」；它**不参与任何分母**。
+    """
+
+    frames = [r.frames for r in results]
+    if not frames:
+        return SurvivalSummary(0, 0, None, None, None, 0)
+    return SurvivalSummary(
+        n=len(results),
+        died=sum(1 for r in results if not r.alive),
+        median_frames=statistics.median(frames),
+        low=min(frames),
+        high=max(frames),
+        at_cap=sum(1 for r in results if r.frames >= cap),
+    )
+
+
 def build_slow_loop(
     store: StructureStore,
     *,
@@ -415,6 +505,89 @@ def build_slow_loop(
     )
 
 
+class BudgetMatchedRetriever:
+    """**预算匹配臂**：记忆系统照跑，但注入的向量被抹掉。
+
+    `HarnessEval`（arXiv:2607.12227）的「预算匹配基线」在 SSEA 的对应物。
+    处理臂相对对照臂**多花的那部分算力**必须被单独控制住，否则「增益」可能
+    只是「多跑了一件事」。这里多跑的正是「记忆系统走一遍」：写入、检索、
+    命中计数、`last_retrieved` 回写**全部照旧发生**，只有 `m_t` 换成零向量。
+
+    于是两臂的差别**只剩「记忆有没有影响决策」**。
+
+    包装的是 `FastLoop` **已经构造好的那个实例**（`run_episode` 在构造之后替换
+    `loop.memory`），所以「默认到底长什么样」仍然只有一处定义——实验里另写
+    一份构造就是分叉，而分叉的表现是「两臂在默认值上不一致」，读数里看不见。
+    """
+
+    def __init__(self, inner: Any) -> None:
+        self.inner = inner
+
+    @property
+    def dim(self) -> int:
+        return int(getattr(self.inner, "dim", 16))
+
+    @property
+    def stats(self) -> dict:
+        """**保留**：记忆系统确实跑过，所以这一臂**有仪器**。
+
+        把它抹成空字典会让人把「预算匹配臂」读成「记忆关臂」，而两者要问的
+        是完全不同的问题。
+        """
+
+        return getattr(self.inner, "stats", {})
+
+    def retrieve(self, perception: Any, now: float | None = None) -> Any:
+        self.inner.retrieve(perception, now)  # 真算：检索、命中计数、回写
+        return torch.zeros(self.dim, dtype=torch.float32)
+
+    def write(self, request: Any, query: Any, observation: Any, feedback: Any) -> Any:
+        return self.inner.write(request, query, observation, feedback)
+
+    def use_context(self, context: Any) -> None:
+        return self.inner.use_context(context)
+
+    def __len__(self) -> int:
+        return len(self.inner)
+
+
+def build_budget_matched_slow_loop(
+    *,
+    throwaway: StructureStore,
+    **kwargs: Any,
+) -> Callable[[Sequence[Any]], Any]:
+    """预算匹配臂的慢环：**照跑**，但产物不发布。
+
+    区分两件事：
+
+    - 「**结构进入快环**」有没有用（处理臂 vs 本臂）；
+    - 「**慢环跑过一遍**」有没有用（本臂 vs 对照臂）。
+
+    只做「机制开 / 机制关」的消融时这两件事被绑在一起，读数分不开。
+
+    ⚠️ **发布通道是返回值，不是 store。** 第一版实现只是把真正的慢环绑到另一个
+    store（弃置场）上就交了差，实测发现它**什么都没改变**——`FastLoop._step_wake`
+    在慢环返回非 None 时会把**返回值**当成新快照换进去
+    （`self.context = self._pending_context`，并顺手重建 `skill_runner`）。
+    于是弃置场那一版跑出了与处理臂**逐位相同**的 33 次调用与同一个能量值，
+    看上去像一条重大发现，实际是这一臂根本没被改动。
+
+    正确做法是**照跑但返回 None**：编译、门控、提交到弃置场全都发生，
+    而快环拿不到新快照，结构永远进不去。
+
+    这是一条通用教训：**「把某个东西换掉」不等于「切断它」**——
+    切断要看清楚它实际是从哪条路过去的。
+    """
+
+    inner = build_slow_loop(throwaway, **kwargs)
+
+    def budget_matched(trace: Sequence[Any]) -> None:
+        inner(trace)  # 照跑：编译 · 门控 · 提交到弃置场
+        return None  # **不发布**：返回 None，快环保持旧快照
+
+    return budget_matched
+
+
 def run_episode(
     seed: int,
     *,
@@ -425,6 +598,7 @@ def run_episode(
     slow_loop: Callable[[Sequence[Any]], Any] | None = None,
     watch_language: bool = False,
     memory_retriever: Any | None = None,
+    memory_budget_matched: bool = False,
 ) -> EpisodeResult:
     """跑一轮，把量收齐。
 
@@ -465,10 +639,19 @@ def run_episode(
         slow_loop=counted_slow_loop,
     )
 
+    # 预算匹配：在构造**之后**替换，包的是 FastLoop 自己造的那个实例。
+    # 这样「默认记忆系统长什么样」仍然只有一处定义（非分叉），而多花的算力
+    # 被单独控制住。放在这里而不是构造参数里，是因为构造参数会逼实验自己
+    # 新建一个「默认」，那正是分叉。
+    if memory_budget_matched:
+        loop.memory = BudgetMatchedRetriever(loop.memory)
+
     rejected_total = 0
     internal_total = 0
     language_crossings = 0
     observation_leaks = 0
+    run_success_frames = 0
+    run_failed_frames = 0
     energy_gained = 0.0
     energy_spent = 0.0
     damage_taken = 0.0
@@ -481,6 +664,11 @@ def run_episode(
         record = loop.trace()[-1]
 
         if record.feedback is not None:
+            if record.state == STATE_RUN:
+                if record.feedback.action_success:
+                    run_success_frames += 1
+                else:
+                    run_failed_frames += 1
             rejected_total += record.feedback.notes.count("constraint_rejected:")
             internal_total += record.feedback.notes.count("internal_error:")
             # 逐帧现加，不从事件流取——口径见模块 docstring 一之一。
@@ -511,6 +699,8 @@ def run_episode(
         frames=len(trace),
         alive=loop.alive,
         run_frames=sum(1 for r in trace if r.state == STATE_RUN),
+        run_success_frames=run_success_frames,
+        run_failed_frames=run_failed_frames,
         sleep_frames=sum(1 for r in trace if r.state == STATE_SLEEP),
         wake_frames=sum(1 for r in trace if r.state == STATE_WAKE),
         constraint_rejected=rejected_total,

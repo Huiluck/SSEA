@@ -40,6 +40,8 @@ from experiments._harness import (
     mean_defined,
     resource_frames,
     run_episode,
+    survival_summary,
+    SurvivalSummary,
 )
 from experiments._instinct import seeded_store
 from SSEA.instinct import preset_blob
@@ -748,3 +750,211 @@ class TestFrameActionOf:
         store, _ = seeded_store("approach", preset_blob("approach"))
         r = run_episode(0, frames=12, store=store)
         assert len(r.action_trace) == r.frames
+
+
+#: 派生量**不得**引用的名字——引用了就等于把「配置上限」当成了分母。
+CAP_NAMES = ("max_frames", "DEFAULT_FRAMES")
+
+
+def _references_cap(source: str) -> bool:
+    """这段源码有没有引用配置上限。**抽出来是为了让它可被单独证红。"""
+
+    return any(name in source for name in CAP_NAMES)
+
+
+def _metrics_that_reference_the_cap() -> list:
+    """扫 ``EpisodeResult`` 的**全部派生指标**，找出引用了「配置上限」的那些。
+
+    一个从不报警的扫描器与一份健康的代码在输出上无法区分（项目的守卫纪律），
+    所以判定逻辑被抽成 :func:`_references_cap`，由测试**两个方向**都钉住。
+    """
+
+    import inspect
+
+    from experiments._harness import EpisodeResult
+
+    offenders = []
+    for name, member in vars(EpisodeResult).items():
+        if isinstance(member, property) and member.fget is not None:
+            if _references_cap(inspect.getsource(member.fget)):
+                offenders.append(name)
+    return sorted(offenders)
+
+
+class TestFrameCapIsNotADenominator:
+    """债务 31：**上限是上限，不是分母**。
+
+    2026-09-29 实测：8/8 个 seed 全部在 66–182 帧死亡，**0/8** 活到 200。
+    审计结论是「代码里没有一处拿上限当分母」——但那句话必须**可执行**，
+    否则它只是一句读过代码的人的断言。本类把它钉成两条守卫。
+    """
+
+    def test_raising_the_cap_does_not_change_the_episode(self) -> None:
+        """**本类的主守卫。** 同一个 seed，上限 200 与 1000 必须给出**同一条**轨迹。
+
+        若哪天有人把上限接进了任何判据/派生量，这条会红——因为两次跑的上限不同。
+        """
+
+        from experiments._harness import run_episode
+        from experiments.exp3_skill_consolidation import fresh_store
+
+        low = run_episode(3, frames=200, store=fresh_store(), slow_loop=lambda t: None)
+        high = run_episode(3, frames=1000, store=fresh_store(), slow_loop=lambda t: None)
+        assert low.frames == high.frames
+        assert low.alive is False and high.alive is False
+        assert low.action_trace == high.action_trace
+
+    def test_no_derived_metric_references_the_cap(self) -> None:
+        assert _metrics_that_reference_the_cap() == []
+
+    def test_the_scanner_can_actually_go_red(self) -> None:
+        """判定逻辑必须**两个方向**都能出结果——否则上一条是假守卫。"""
+
+        assert _references_cap("return 1.0 / DEFAULT_FRAMES") is True
+        assert _references_cap("return self.internal_errors / self.frames") is False
+
+    def test_a_real_property_source_is_visible_to_the_scanner(self) -> None:
+        """`inspect.getsource` 在真实属性上确实拿得到源码。
+
+        拿不到时 ``_metrics_that_reference_the_cap`` 会抛 ``OSError`` 而不是
+        静默返回空列表——但这条把「拿得到」本身钉住，免得哪天换成打包/冻结
+        运行方式后它变成一条永远为真的守卫。
+        """
+
+        import inspect
+
+        from experiments._harness import EpisodeResult
+
+        src = inspect.getsource(EpisodeResult.interface_error_rate.fget)
+        assert "self.frames" in src
+
+
+class TestSurvivalSummary:
+    """存活读数是**淘汰函数的输出**——唯一一条模型碰不到的判据。"""
+
+    def test_headline_keeps_cap_and_measurement_apart(self) -> None:
+        summary = SurvivalSummary(8, 8, 122.5, 66, 182, 0)
+        line = summary.headline(200)
+        assert "200" in line and "66–182" in line
+        assert "8/8 未活到上限" in line
+
+    def test_rows_put_survival_first(self) -> None:
+        summary = SurvivalSummary(8, 8, 122.5, 66, 182, 0)
+        rows = summary.rows()
+        assert rows[0][0].startswith("存活帧")
+        assert "8/8" in str(rows[1][1])
+
+    def test_no_results_is_none_not_zero(self) -> None:
+        summary = survival_summary([], 200)
+        assert summary.median_frames is None
+        assert "一轮都没跑起来" in summary.headline(200)
+
+    def test_at_cap_counts_only_frames_at_or_above_the_cap(self) -> None:
+        from experiments.exp3_skill_consolidation import fresh_store
+        from experiments._harness import run_episode
+
+        rs = [run_episode(0, frames=40, store=fresh_store(), slow_loop=lambda t: None)]
+        s = survival_summary(rs, 40)
+        assert s.n == 1
+        # 上限 40 时那一轮会活到上限（自然死亡在 60–90 帧之后）
+        assert s.at_cap == 1
+        assert survival_summary(rs, 200).at_cap == 0
+
+
+class TestActionSideDenominator:
+    """`run_action_success_rate` —— 「动作全失败」这一档的分母。
+
+    2026-09-29 实测：8 个 seed 里有 **3 个**是 `0/68`、`0/74`、`0/65`——
+    它们靠睡眠活着，而 `ACTION_FAILED` 与帧数相等。没有这个分母，
+    「一帧 RUN 都没跑过」与「跑了但一次没成功」在 `0` 上长得一样。
+    """
+
+    def test_zero_denominator_is_none_not_zero(self) -> None:
+        from SSEA.sse_protocols import StructureStore
+        from experiments._harness import run_episode
+
+        r = run_episode(0, frames=1, store=StructureStore(), slow_loop=lambda t: None)
+        if r.run_success_frames + r.run_failed_frames == 0:
+            assert r.run_action_success_rate is None
+
+    def test_rate_is_the_ratio_when_defined(self) -> None:
+        from experiments.exp3_skill_consolidation import fresh_store
+        from experiments._harness import run_episode
+
+        # seed 3 是实测的「动作全失败」标本：RUN 帧不少，成功 0。
+        r = run_episode(3, frames=200, store=fresh_store(), slow_loop=lambda t: None)
+        assert r.run_success_frames == 0
+        assert r.run_failed_frames > 0
+        assert r.run_action_success_rate == 0.0
+
+
+class TestBudgetMatchedArm:
+    """预算匹配臂必须**真的切断发布**，而不是看起来像切断了。
+
+    第一版实现只把慢环绑到**另一个 store**（弃置场）上就交了差，实测它**什么都没
+    改变**——``FastLoop._step_wake`` 认的是慢环的**返回值**，不是 store。那一版跑出了
+    与处理臂**逐位相同**的 33 次调用与同一个能量值，看上去像一条重大发现
+    （「结构没进快环也照样被调用」），实际是**这一臂根本没被改动**。
+
+    本类是那条教训的守卫：**预算匹配钩子必须恒返回 None**。
+    """
+
+    def _real_trace(self):
+        """跑一小段，把慢环实际收到的那条 trace 抓出来。"""
+
+        from experiments._harness import build_slow_loop, run_episode
+        from experiments.exp3_skill_consolidation import fresh_store
+
+        store = fresh_store()
+        captured: dict = {}
+        inner = build_slow_loop(store, plasticity=False)
+
+        def hook(trace):
+            captured["trace"] = tuple(trace)
+            return inner(trace)
+
+        run_episode(0, frames=200, store=store, slow_loop=hook)
+        assert captured.get("trace"), "这一跑没触发慢环，夹具失效"
+        return store, captured["trace"]
+
+    def test_budget_matched_hook_always_returns_none(self) -> None:
+        """**本类的全部理由。** 返回非 None 就等于发布，臂会静默退化成处理臂。"""
+
+        from SSEA.sse_protocols import StructureStore
+        from experiments._harness import build_budget_matched_slow_loop
+
+        _store, trace = self._real_trace()
+        hook = build_budget_matched_slow_loop(
+            throwaway=StructureStore(), plasticity=False
+        )
+        assert hook(trace) is None
+
+    def test_publishing_hook_returns_a_context_on_the_same_trace(self) -> None:
+        """对照组：同一个 trace、同一个钩子形状，**发布版**必须给出非 None。
+
+        没有这一条，上面的断言可能只是因为这份夹具根本产生不出可供提交的东西。
+        """
+
+        from SSEA.sse_protocols import StructureStore
+        from experiments._harness import build_slow_loop
+
+        # 用**空**store：`_real_trace()` 跑过的那一份已经把它编译出的技能收进去了，
+        # 对同一条 trace 再来一次会被 `new_skills()` 去重掉 → 不提交 → 返回 None。
+        # 那是去重的正确行为，不是发布通道失效。
+        _store, trace = self._real_trace()
+        assert build_slow_loop(StructureStore(), plasticity=False)(trace) is not None
+
+    def test_memory_budget_matched_keeps_the_instrument(self) -> None:
+        """记忆侧的预算匹配臂**仍然有仪器**——它确实跑了记忆系统。
+
+        把 ``stats`` 抹成空字典会让人把它读成「记忆关臂」，而两者要问的是
+        完全不同的问题（见 ``BudgetMatchedRetriever.stats`` 的 docstring）。"""
+
+        from experiments.exp3_skill_consolidation import fresh_store
+        from experiments._harness import run_episode
+
+        store = fresh_store()
+        r = run_episode(0, frames=40, store=store, slow_loop=lambda t: None,
+                        memory_budget_matched=True)
+        assert r.memory_instrumented is True
+

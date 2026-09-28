@@ -34,6 +34,7 @@ import sys
 
 from experiments._harness import (
     DEFAULT_FRAMES,
+    survival_summary,
     DEFAULT_SEEDS,
     print_matrix,
     print_table,
@@ -62,6 +63,8 @@ def main(argv: list[str] | None = None) -> int:
         ),
     )
 
+    # 上限与实测分开印（债务 31）。
+    print("  " + survival_summary(results, frames).headline(frames))
     total_run = sum(r.run_frames for r in results)
     total_frames = sum(r.frames for r in results)
     total_rejected = sum(r.constraint_rejected for r in results)

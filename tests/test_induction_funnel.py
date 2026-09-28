@@ -22,7 +22,9 @@ from SSEA.sse_protocols.induction_funnel import (
     ALL_DUPLICATE,
     EMPTY_TRACE,
     NEVER_INVOKED,
+    NO_DIRECT_SUCCESS_FRAME,
     NO_POSITIVE_SEGMENT,
+    NO_SLOW_LOOP_TRIGGER,
     NO_WINDOW,
     OPEN,
     REJECTED_BY_GATE,
@@ -34,6 +36,8 @@ from tests.test_skill_library import consistent_run, successful_run
 
 def _funnel(
     frames: int = 100,
+    slow_loop_calls: int = 3,
+    direct_success_frames: int = 30,
     windows: int = 10,
     positive: int = 5,
     new_candidates: int = 5,
@@ -48,19 +52,27 @@ def _funnel(
     夹具必须表达真实形状而不是随手改一个数。
     """
 
-    vals = [frames, windows, positive, new_candidates, committed]
-    for i in range(1, len(vals)):
-        vals[i] = 0 if vals[i - 1] == 0 else min(vals[i], vals[i - 1])
-    if vals[-1] == 0:
-        reused = 0
+    if frames == 0:
+        # 没有帧 ⇒ 后面每一段都谈不上：全零。
+        slow_loop_calls = 0
+        direct_success_frames = windows = positive = 0
+        new_candidates = committed = reused = 0
     else:
-        reused = min(reused, vals[-1])
+        # 单调链：直接成功帧 → 窗 → 候选 → 去重 → 入库。
+        # （慢环调用次数**不在链上**：一次调用可以切出很多窗。）
+        chain = [direct_success_frames, windows, positive, new_candidates, committed]
+        for i in range(1, len(chain)):
+            chain[i] = 0 if chain[i - 1] == 0 else min(chain[i], chain[i - 1])
+        direct_success_frames, windows, positive, new_candidates, committed = chain
+        reused = 0 if committed == 0 else min(reused, committed)
     return InductionFunnel(
-        frames=vals[0],
-        windows=vals[1],
-        positive=vals[2],
-        new_candidates=vals[3],
-        committed=vals[4],
+        frames=frames,
+        slow_loop_calls=slow_loop_calls,
+        direct_success_frames=direct_success_frames,
+        windows=windows,
+        positive=positive,
+        new_candidates=new_candidates,
+        committed=committed,
         reused=reused,
     )
 
@@ -118,16 +130,41 @@ class TestDiagnosisOrderCannotBeReversed:
     def test_zero_windows_wins_over_zero_reuse(self) -> None:
         """**本文件最重要的一条。** 全 0 的漏斗必须报最上游的那一段。"""
 
-        f = InductionFunnel(frames=100, windows=0)
+        f = InductionFunnel(frames=100, slow_loop_calls=2, direct_success_frames=5, windows=0)
         d = diagnose(f)
         assert d.code == NO_WINDOW
         assert d.code != NEVER_INVOKED
+
+    def test_zero_direct_success_frames_wins_over_no_window(self) -> None:
+        """**2026-09-29 实测补的一条。** 3/8 个 seed 的直接成功帧是 0
+        （动作在环境里全被拒），当时它们被报成 `NO_WINDOW`——「改切段规则」。
+
+        真病在**动作侧**：两句话指向完全不同的下一步。
+        """
+
+        f = InductionFunnel(frames=100, slow_loop_calls=2, direct_success_frames=0, windows=0)
+        assert diagnose(f).code == NO_DIRECT_SUCCESS_FRAME
+        assert diagnose(f).code != NO_WINDOW
+
+    def test_no_slow_loop_call_wins_over_no_window(self) -> None:
+        """**2026-09-29 实测补的一条。** 8 个 seed 里有 2 个 `slow_loop_calls == 0`
+        （整轮没进过睡眠），当时被误报成 `NO_WINDOW`——「改切段规则」。
+
+        两句话指向完全不同的下一步：前者去查睡眠触发，后者去改 `_is_direct_success`。
+        这是「从前往后找第一个 0」的下一层：漏斗之前还有一道闸。
+        """
+
+        f = InductionFunnel(frames=200, slow_loop_calls=0, windows=0)
+        assert diagnose(f).code == NO_SLOW_LOOP_TRIGGER
+        assert diagnose(f).code != NO_WINDOW
 
     def test_empty_trace_wins_over_everything(self) -> None:
         assert diagnose(InductionFunnel()).code == EMPTY_TRACE
 
     def test_each_code_is_reachable(self) -> None:
         assert diagnose(_funnel(frames=0)).code == EMPTY_TRACE
+        assert diagnose(_funnel(slow_loop_calls=0, windows=0)).code == NO_SLOW_LOOP_TRIGGER
+        assert diagnose(_funnel(direct_success_frames=0, windows=0)).code == NO_DIRECT_SUCCESS_FRAME
         assert diagnose(_funnel(windows=0)).code == NO_WINDOW
         assert diagnose(_funnel(positive=0)).code == NO_POSITIVE_SEGMENT
         assert diagnose(_funnel(positive=3, new_candidates=0, committed=0, reused=0)).code == ALL_DUPLICATE
@@ -144,6 +181,8 @@ class TestDiagnosisOrderCannotBeReversed:
 
         funnels = (
             _funnel(frames=0),
+            _funnel(slow_loop_calls=0, windows=0),
+            _funnel(direct_success_frames=0, windows=0),
             _funnel(windows=0),
             _funnel(positive=0),
             _funnel(positive=3, new_candidates=0, committed=0, reused=0),
@@ -153,8 +192,8 @@ class TestDiagnosisOrderCannotBeReversed:
         )
         diagnoses = [diagnose(f) for f in funnels]
         assert [d.code for d in diagnoses] == [
-            EMPTY_TRACE, NO_WINDOW, NO_POSITIVE_SEGMENT, ALL_DUPLICATE,
-            REJECTED_BY_GATE, NEVER_INVOKED, OPEN,
+            EMPTY_TRACE, NO_SLOW_LOOP_TRIGGER, NO_DIRECT_SUCCESS_FRAME, NO_WINDOW,
+            NO_POSITIVE_SEGMENT, ALL_DUPLICATE, REJECTED_BY_GATE, NEVER_INVOKED, OPEN,
         ]
         for d in diagnoses:
             assert d.stage
@@ -175,29 +214,66 @@ class TestRealReadings20260929:
     被提起。
     """
 
-    #: (windows, positive, new_candidates, committed, reused)，逐 seed，顺序同 DEFAULT_SEEDS。
+    #: (慢环调用次数, windows, positive, new_candidates, committed, reused)，逐 seed，
+    #: 顺序同 DEFAULT_SEEDS。
+    #:
+    #: ⚠️ **2026-09-29 修正两处**：
+    #: 1. 早先版本把多次慢环调用的窗数**累加**了（慢环每次拿到的都是整条 trace，
+    #:    不是增量），于是 4 窗被算成 8 窗。现在是**最后一次**（最长）trace 的读数。
+    #: 2. seed 4 / 6 的 `slow_loop_calls == 0`——整轮**没进过睡眠**——早先被误报成
+    #:    `NO_WINDOW`（「改切段规则」）。真病在睡眠触发，两者下一步完全不同。
     READINGS = (
-        (8, 2, 1, 1, 1),    # seed 0 → OPEN
-        (12, 0, 0, 0, 0),   # seed 1 → NO_POSITIVE_SEGMENT
-        (18, 0, 0, 0, 0),   # seed 2 → NO_POSITIVE_SEGMENT
-        (0, 0, 0, 0, 0),    # seed 3 → NO_WINDOW
-        (0, 0, 0, 0, 0),    # seed 4 → NO_WINDOW
-        (10, 3, 1, 1, 0),   # seed 5 → NEVER_INVOKED
-        (0, 0, 0, 0, 0),    # seed 6 → NO_WINDOW
-        (13, 0, 0, 0, 0),   # seed 7 → NO_POSITIVE_SEGMENT
+        (3, 43, 4, 1, 1, 1, 1),   # seed 0 → OPEN
+        (3, 67, 7, 0, 0, 0, 0),   # seed 1 → NO_POSITIVE_SEGMENT
+        (4, 84, 8, 0, 0, 0, 0),   # seed 2 → NO_POSITIVE_SEGMENT
+        (2, 0, 0, 0, 0, 0, 0),    # seed 3 → NO_DIRECT_SUCCESS_FRAME（RUN 60 帧、成功 0）
+        (0, 0, 0, 0, 0, 0, 0),    # seed 4 → NO_SLOW_LOOP_TRIGGER
+        (4, 54, 6, 1, 1, 1, 0),   # seed 5 → NEVER_INVOKED
+        (0, 0, 0, 0, 0, 0, 0),    # seed 6 → NO_SLOW_LOOP_TRIGGER
+        (4, 84, 7, 0, 0, 0, 0),   # seed 7 → NO_POSITIVE_SEGMENT
     )
 
     def _funnels(self) -> tuple[InductionFunnel, ...]:
         return tuple(
             InductionFunnel(
-                frames=200, windows=w, positive=p, new_candidates=n, committed=c, reused=r
+                frames=200,
+                slow_loop_calls=calls,
+                direct_success_frames=ds,
+                windows=w,
+                positive=p,
+                new_candidates=n,
+                committed=c,
+                reused=r,
             )
-            for w, p, n, c, r in self.READINGS
+            for calls, ds, w, p, n, c, r in self.READINGS
         )
 
-    def test_four_diseases_not_one(self) -> None:
+    def test_five_diseases_not_one(self) -> None:
         codes = {diagnose(f).code for f in self._funnels()}
-        assert codes == {OPEN, NO_POSITIVE_SEGMENT, NO_WINDOW, NEVER_INVOKED}
+        assert codes == {
+            OPEN, NO_POSITIVE_SEGMENT, NO_DIRECT_SUCCESS_FRAME, NEVER_INVOKED,
+            NO_SLOW_LOOP_TRIGGER,
+        }
+
+    def test_three_seeds_have_zero_direct_success_frames(self) -> None:
+        """3/8 个 seed 的 `direct_success_frames == 0`——动作侧。
+
+        这一档此前被并进 `NO_WINDOW`，于是「查动作为什么全失败」被读成
+        「改切段规则」。补上这个分母才分得开。
+        """
+
+        zero = [f for f in self._funnels() if f.direct_success_frames == 0]
+        assert len(zero) == 3
+        codes = {diagnose(f).code for f in zero}
+        assert codes == {NO_DIRECT_SUCCESS_FRAME, NO_SLOW_LOOP_TRIGGER}
+
+    def test_two_seeds_never_enter_sleep(self) -> None:
+        """2/8 个 seed 整轮**没有进过睡眠** ⇒ 慢环一次都没被调用。
+
+        这一档在漏斗之前：不是「切不出窗」，是「根本没开始切」。
+        """
+
+        assert sum(1 for f in self._funnels() if f.slow_loop_calls == 0) == 2
 
     def test_two_thirds_of_seeds_never_produce_a_candidate(self) -> None:
         """6/8 个 seed 的 attempted 是 0 ⇒ 在这些 seed 上「技能表示够不够」
@@ -235,6 +311,25 @@ class TestCandidateCountsMatchesTheCompiler:
 
     def test_too_short_run_yields_no_window(self) -> None:
         assert candidate_counts(successful_run(2)) == (0, 0)
+
+    def test_direct_success_frames_counts_the_same_condition_as_the_compiler(self) -> None:
+        """分母与切窗走**同一份** `_is_direct_success`；写成两份必然漂移。"""
+
+        from SSEA.skill_library import direct_success_frames
+
+        assert direct_success_frames(successful_run(5)) == 5
+        assert direct_success_frames(consistent_run([0.5] * 5, [0.0] * 5)) == 5
+        assert direct_success_frames(()) == 0
+
+    def test_windows_never_exceed_success_frames(self) -> None:
+        """`windows ≤ direct_success_frames` —— 漏斗单调链的一环。"""
+
+        from SSEA.skill_library import direct_success_frames
+
+        for trace in (successful_run(9), consistent_run([0.5] * 7, [0.0] * 7)):
+            ds = direct_success_frames(trace)
+            windows, _positive = candidate_counts(trace)
+            assert windows <= ds, (ds, windows)
 
     def test_candidate_count_equals_compiled_length(self) -> None:
         """防漂移断言：候选数必须等于编译器实际产出的条数。"""

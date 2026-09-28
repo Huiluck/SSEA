@@ -27,6 +27,8 @@ from dataclasses import dataclass
 
 #: 漏斗诊断码。每个码对应**一个**下一步，不是一个笼统的「失败了」。
 EMPTY_TRACE = 'EMPTY_TRACE'
+NO_SLOW_LOOP_TRIGGER = 'NO_SLOW_LOOP_TRIGGER'
+NO_DIRECT_SUCCESS_FRAME = 'NO_DIRECT_SUCCESS_FRAME'
 NO_WINDOW = 'NO_WINDOW'
 NO_POSITIVE_SEGMENT = 'NO_POSITIVE_SEGMENT'
 ALL_DUPLICATE = 'ALL_DUPLICATE'
@@ -39,6 +41,15 @@ DIAGNOSIS: dict[str, tuple[str, str]] = {
     EMPTY_TRACE: (
         '没有帧进入编译',
         '先查快环有没有产出可编译的 trace，而不是查技能表示',
+    ),
+    NO_SLOW_LOOP_TRIGGER: (
+        '睡眠触发（漏斗之前）',
+        '慢环一次都没被调用——查睡眠是否发生（sleep_entry / 睡眠判据），**不要动切段规则**',
+    ),
+    NO_DIRECT_SUCCESS_FRAME: (
+        '直接成功帧（漏斗之前）',
+        '慢环跑了，但**一帧都没满足「直接成功」**——查动作为什么全失败'
+        '（`ACTION_FAILED` / `constraint_rejected` / 世界），**不要动切段规则**',
     ),
     NO_WINDOW: (
         '切窗阶段',
@@ -77,6 +88,19 @@ class InductionFunnel:
     """
 
     frames: int = 0
+    #: 慢环被调用的次数。**它不在单调链上**：一次调用可以切出很多窗，
+    #: 两者之间没有包含关系。它是一道**闸**——为 0 时后面所有段都无意义。
+    #:
+    #: 2026-09-29 实测发现：8 个 seed 里有 **2 个** `slow_loop_calls == 0`，
+    #: 而当时它们被误报成 `NO_WINDOW`（「改切段规则」）。真正的病在睡眠触发，
+    #: 两者指向完全不同的下一步——这正是「从前往后找第一个 0」的下一层。
+    slow_loop_calls: int = 0
+    #: 满足「直接成功」四条件的帧数。**它在单调链上**（``windows ≤ direct_success_frames``，
+    #: 因为每个窗至少要 ``min_frames`` 个这样的帧），与 ``slow_loop_calls`` 不同。
+    #:
+    #: 2026-09-29 实测：8 个 seed 里有 **3 个**是这一档为 0（动作在环境里全被拒），
+    #: 而当时它们被报成 `NO_WINDOW`（「改切段规则」）——方向完全错。
+    direct_success_frames: int = 0
     windows: int = 0
     positive: int = 0
     new_candidates: int = 0
@@ -84,7 +108,10 @@ class InductionFunnel:
     reused: int = 0
 
     def __post_init__(self) -> None:
-        for name in ('frames', 'windows', 'positive', 'new_candidates', 'committed', 'reused'):
+        for name in (
+            'frames', 'slow_loop_calls', 'direct_success_frames',
+            'windows', 'positive', 'new_candidates', 'committed', 'reused',
+        ):
             value = getattr(self, name)
             if value < 0:
                 raise ValueError(f'漏斗计数不得为负：{name}={value}')
@@ -93,6 +120,7 @@ class InductionFunnel:
         # 那比计数为 0 更难发现，所以在这里直接拒收。
         stages = (
             ('frames', self.frames),
+            ('direct_success_frames', self.direct_success_frames),
             ('windows', self.windows),
             ('positive', self.positive),
             ('new_candidates', self.new_candidates),
@@ -135,7 +163,10 @@ class InductionFunnel:
     def first_empty_stage(self) -> str | None:
         """从前往后**第一个**为 0 的段名。全非 0 时返回 None。"""
 
-        for name in ('frames', 'windows', 'positive', 'new_candidates', 'committed'):
+        for name in (
+            'frames', 'slow_loop_calls', 'direct_success_frames',
+            'windows', 'positive', 'new_candidates', 'committed',
+        ):
             if getattr(self, name) == 0:
                 return name
         if self.reused == 0:
@@ -185,6 +216,10 @@ def diagnose(funnel: InductionFunnel) -> FunnelDiagnosis:
 
     if funnel.frames == 0:
         code = EMPTY_TRACE
+    elif funnel.slow_loop_calls == 0:
+        code = NO_SLOW_LOOP_TRIGGER
+    elif funnel.direct_success_frames == 0:
+        code = NO_DIRECT_SUCCESS_FRAME
     elif funnel.windows == 0:
         code = NO_WINDOW
     elif funnel.positive == 0:
@@ -209,6 +244,8 @@ def diagnose(funnel: InductionFunnel) -> FunnelDiagnosis:
 
 __all__ = [
     'EMPTY_TRACE',
+    'NO_SLOW_LOOP_TRIGGER',
+    'NO_DIRECT_SUCCESS_FRAME',
     'NO_WINDOW',
     'NO_POSITIVE_SEGMENT',
     'ALL_DUPLICATE',

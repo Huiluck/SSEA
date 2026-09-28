@@ -76,6 +76,7 @@ from SSEA.fast_loop import ZeroMemoryRetriever
 from SSEA.instinct import preset_blob
 from experiments._harness import (
     DEFAULT_FRAMES,
+    survival_summary,
     DEFAULT_SEEDS,
     EpisodeResult,
     action_divergence,
@@ -94,12 +95,21 @@ PLAN = (
     ("grasp_in_reach", preset_blob("grasp_in_reach")),
 )
 
-#: ``(臂名, 检索器工厂)``。``None`` = 让 ``FastLoop`` 用它自己的默认
-#: （``MemorySystem``）——**不是**这里另写一个构造，否则两臂会在
+#: ``(臂名, 检索器工厂, 是否预算匹配)``。``None`` = 让 ``FastLoop`` 用它自己的
+#: 默认（``MemorySystem``）——**不是**这里另写一个构造，否则两臂会在
 #: "默认到底是什么"上分叉。
-ARMS: tuple[tuple[str, object], ...] = (
-    ("记忆关", ZeroMemoryRetriever),
-    ("记忆开", None),
+#:
+#: **第三臂是 HarnessEval 意义的预算匹配基线。** 它让记忆系统**照跑**
+#: （写入、检索、命中计数全发生），但把注入的 `m_t` 换成零向量。于是
+#: 「记忆开」相对「记忆关」多花的那部分算力被单独控制住，两臂的差别只剩
+#: **「记忆有没有影响决策」**。没有它，「增益」可能只是「多跑了一件事」。
+#:
+#: 三臂的正确读法：**记忆关 → 预算匹配** 之间是「记忆系统跑过一遍」的效应，
+#: **预算匹配 → 记忆开** 之间才是「记忆影响了决策」的效应。
+ARMS: tuple[tuple[str, object, bool], ...] = (
+    ("记忆关", ZeroMemoryRetriever, False),
+    ("记忆开", None, False),
+    ("预算匹配", None, True),
 )
 
 
@@ -111,7 +121,9 @@ def fresh_store():
     return store
 
 
-def run_arm(name: str, factory: object, frames: int) -> list[EpisodeResult]:
+def run_arm(
+    name: str, factory: object, frames: int, budget_matched: bool = False
+) -> list[EpisodeResult]:
     results = []
     for seed in DEFAULT_SEEDS:
         retriever = None if factory is None else factory()  # type: ignore[operator]
@@ -121,6 +133,7 @@ def run_arm(name: str, factory: object, frames: int) -> list[EpisodeResult]:
                 frames=frames,
                 store=fresh_store(),
                 memory_retriever=retriever,
+                memory_budget_matched=budget_matched,
             )
         )
     return results
@@ -182,11 +195,19 @@ def main(argv: list[str] | None = None) -> int:
 
     print(f"实验 2：记忆召回    {len(DEFAULT_SEEDS)} seed × {frames} 帧上限")
     print(
-        "两臂：记忆关 = ZeroMemoryRetriever；记忆开 = FastLoop 默认 MemorySystem。\n"
-        "两臂都播种同一份本能（approach + grasp_in_reach），每个 (臂, seed) 一份新 store。"
+        "三臂：记忆关 = ZeroMemoryRetriever；记忆开 = FastLoop 默认 MemorySystem；"
+        "预算匹配 = 默认 MemorySystem **照跑**但注入被抹成零向量（HarnessEval 意义的预算匹配基线）。\n"
+        "三臂都播种同一份本能（approach + grasp_in_reach），每个 (臂, seed) 一份新 store。"
     )
 
-    by_arm = {name: run_arm(name, factory, frames) for name, factory in ARMS}
+    by_arm = {
+        name: run_arm(name, factory, frames, budget) for name, factory, budget in ARMS
+    }
+
+    # 上限与实测分开印。**这一行是债务 31 的正解**：不印它，
+    # 「× 200 帧上限」会被读成「跑了 200 帧」，而实测 0/8 活到上限。
+    for name, results in by_arm.items():
+        print(f"  [{name}] {survival_summary(results, frames).headline(frames)}")
 
     for name, results in by_arm.items():
         instrumented = sum(1 for r in results if r.memory_instrumented)
@@ -234,7 +255,10 @@ def main(argv: list[str] | None = None) -> int:
         dist, dist_n = mean_defined([r.mean_nearest_hazard_distance for r in results])
         res_dist, res_n = mean_defined([r.mean_nearest_resource_distance for r in results])
         rows.extend(
-            (
+            # 存活帧排在最前：它是**淘汰函数的输出**，是这一堆读数里唯一一条
+            # 模型碰不到的（C9 把淘汰判给环境）。其余都是机制计数。
+            survival_summary(results, frames).rows()
+            + (
                 (f"[{name}] 记忆写入成功率", f"{write_rate}  (n={write_n})"),
                 (f"[{name}] 记忆检索命中率", f"{hit_rate}  (n={hit_n})"),
                 (f"[{name}] 危险回避率", f"{avoid}  (n={avoid_n})"),
