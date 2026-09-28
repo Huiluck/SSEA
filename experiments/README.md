@@ -343,6 +343,6 @@ plasticity.clip   ×1      store.commit ×1
 
 ## 相关文档
 
-- `docs/12-progress-report.md` §4.2——七个实验的进度表（数字的归档处）
-- `docs/13-milestone4-plan.md` §6.6——后续增量与顺序
-- `docs/14-overview-and-roadmap.md` §6.3 / §6.4——各实验的前置与缺口
+- `../docs/06-status-roadmap.md` §4.2——七个实验的进度表（数字的归档处）
+- `../docs/06-status-roadmap.md` §6.6——后续增量与顺序
+- `../docs/06-status-roadmap.md` §6.3 / §6.4——各实验的前置与缺口

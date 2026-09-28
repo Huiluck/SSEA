@@ -2,13 +2,13 @@
 
 **状态**：Milestone 1、2、3 完成；Milestone 4 进行中（增量 1 验证门、增量 2
 经验编译器、增量 3 可塑性已落地，执行计划见
-[docs/13-milestone4-plan.md](docs/13-milestone4-plan.md)）。
+[docs/06-status-roadmap.md](../docs/06-status-roadmap.md)）。
 上一里程碑（Milestone 0：架构冻结）的三份文档见
-[docs/09](docs/09-architecture-originality.md)、[docs/10](docs/10-boundary-definition-table.md)、
-[docs/11](docs/11-phase1-not-doing-list.md)。
+[docs/04](../docs/04-boundaries.md)、[docs/04](../docs/04-boundaries.md)、
+[docs/04](../docs/04-boundaries.md)。
 
-**实现依据**：[docs/07-ssea-v0.3.1-charter.md](docs/07-ssea-v0.3.1-charter.md) 第 8 节
-（协议原文）+ [docs/08-dual-loop-interface-and-gap-closure.md](docs/08-dual-loop-interface-and-gap-closure.md)
+**实现依据**：[docs/03-architecture-spec.md](../docs/03-architecture-spec.md) 第 8 节
+（协议原文）+ [docs/03-architecture-spec.md](../docs/03-architecture-spec.md)
 第 5 节修订条款汇总表（19 条）。**凡 08 修订过的协议，以 08 为准，不以 07 原文为准。**
 
 ---
@@ -105,7 +105,7 @@ done
 15 个 seed 下均为 910 passed / 1 skipped（实验 2 / 3 落地收尾时实测；
 趋近本能收尾时 847，增量 3 收尾时 751，增量 2 收尾时 684，
 增量 1 收尾时 649）。这条纪律由
-[docs/13-milestone4-plan.md](docs/13-milestone4-plan.md) §7 定下：
+[docs/06-status-roadmap.md](../docs/06-status-roadmap.md) §7 定下：
 **此后每次改动都必须在这 15 个 seed 下复跑**，不只是默认顺序。
 
 协议层**只依赖标准库**，不 import torch / numpy——这是 Milestone 1
@@ -337,7 +337,7 @@ MemorySystem.write(a_t.memory, p_t, o_{t+1}, f_t)  # Milestone 3 新增
 > `test_deleted_accessors_stay_deleted` 是一条**真断言**盯着它们不回来
 > （`monkeypatch` 造变异实测能红）。**没有那条断言，「已删」只是一个 commit，
 > 不是一个性质。** 见 `tests/test_consumer_surface.py`、
-> [docs/14](docs/14-overview-and-roadmap.md) §6.3.7 与 §6.4 线 D。
+> [docs/06](../docs/06-status-roadmap.md) §6.3.7 与 §6.4 线 D。
 
 状态机（08 §2.2 睡眠期是一等公民状态）：
 
@@ -356,7 +356,7 @@ RUN ──代谢判定──► SLEEP ──满 min_sleep_frames──► WAKE �
 
 ## 8. 明确不在本里程碑的内容
 
-按 [docs/11](docs/11-phase1-not-doing-list.md) 的执行机制，以下各项**未实现**：
+按 [docs/04](../docs/04-boundaries.md) 的执行机制，以下各项**未实现**：
 
 | 未实现 | 属于 | 现状 |
 |---|---|---|
@@ -380,7 +380,7 @@ RUN ──代谢判定──► SLEEP ──满 min_sleep_frames──► WAKE �
 而这个世界里唯一的正能量来源就是 grasp 资源。所以**默认配置下慢环跑一万帧
 也编译不出任何东西**——这不是编译器的缺陷，是世界还没给出可学的成功。
 增量 2 的端到端测试因此脚本化了策略，理由记录在
-[docs/13-milestone4-plan.md](docs/13-milestone4-plan.md) §5.4。
+[docs/06-status-roadmap.md](../docs/06-status-roadmap.md) §5.4。
 
 ---
 
@@ -447,7 +447,7 @@ RUN ──代谢判定──► SLEEP ──满 min_sleep_frames──► WAKE �
 以及 `DeathHook` 的接线（死亡快照）。Milestone 3 已把它们要消费的产物（trace、
 提案、可继承判据、统计回写）全部备齐。
 
-执行顺序见 [docs/13-milestone4-plan.md](docs/13-milestone4-plan.md) §3：
+执行顺序见 [docs/06-status-roadmap.md](../docs/06-status-roadmap.md) §3：
 Verification Gate（✅ 增量 1）→ Experience Compiler（✅ 增量 2）→
 Plasticity Controller + LocalPlasticity（✅ 增量 3）→ RuleCompiler →
 HeritableFilter → Gene Manager。
