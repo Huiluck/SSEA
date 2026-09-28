@@ -76,6 +76,7 @@ MAP = {
  "WebRL": ("S8 技能构造", "G2", "失败→课程任务生成 + 演员置信过滤 + 四类失败分类法"),
  "Xolver": ("S3 记忆检索", "G2", "双记忆分层（长期 episodic × 单题工作记忆）+ 跨题经验积累回路"),
  "AgentEvolver": ("S11 睡眠期", "G1", "三段式闭环形状（自问/自导航/自归因）+ 成本标尺 + reference-replay 合法性门"),
+ "MetaContextEngineering": ("S6 记忆动作", "G2", "元技能 ΔP 的双层形式化（元层技能演化 × 基座层上下文实例化）+ 双产物发布 + best-so-far 回滚"),
  "CoMAS": ("S1 判据健康", "G4", "「奖励来源=同伴」的 C9 边界裁决 + 自评回路两种失败模式 + 奖励-验证器一致性协议"),
  "SkillNet": ("S8 技能构造", "G2", "关系四类型（similar_to/belong_to/compose_with/depend_on）+ pre/post 场景契约 + 二值组合完备度"),
  "SkillsBench": ("S8 技能构造", "G5", "配对评测协议 + 确定性 verifier + 外部负结果（自生成技能低于无技能基线）"),
