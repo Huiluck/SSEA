@@ -208,6 +208,14 @@ class EpisodeResult:
     #: 从事件计数器读会得到"一次都没调用过"，而真相可能在调用（还会失败）。
     skill_successes: int = 0
     skill_failures: int = 0
+    #: **被真正调用过**至少一次的技能 id（去重、排序）。
+    #:
+    #: 它是技能固化漏斗第三档 ``reused`` 的分子：**不同技能的个数**，不是调用
+    #: 次数。调用次数已经在 ``skill_calls`` / ``skill_events`` 上；把两者混起来，
+    #: 正是「0/33」会同时被读成「没有技能被复用」与「调用全部失败」的原因。
+    #: 取自 ``SkillRunner.invoked_skill_ids()``——只有 ``submit`` 不算，
+    #: precondition 可能在 submit 时就把它挡回去，那是「想调用」不是「调用到」。
+    invoked_skills: tuple[str, ...] = ()
     #: 版本窗口的段数（``energy_by_version_window``）。它是
     #: :attr:`energy_change` 的分母来源——少于 2 段就没有第二个观测点。
     energy_windows: int = 0
@@ -529,6 +537,7 @@ def run_episode(
         nearest_resource_distance_sum=resource_distance_sum,
         max_success_run=success_lengths[0] if success_lengths else 0,
         compileable_segments=compileable_segments(trace),
+        invoked_skills=tuple(loop.skill_runner.invoked_skill_ids()),
         # 尾部取一次即可：计数器只增不减、不截断，不需要逐帧加。
         event_totals=loop.environment.event_counts(),
         # 记忆请求是**全量 append 的列表**（不是 16 槽环形缓冲），所以这个

@@ -56,6 +56,8 @@ from __future__ import annotations
 import sys
 
 from SSEA.instinct import preset_blob
+from SSEA.skill_library import candidate_counts
+from SSEA.sse_protocols.induction_funnel import InductionFunnel, diagnose
 from experiments._harness import (
     DEFAULT_FRAMES,
     DEFAULT_SEEDS,
@@ -84,30 +86,66 @@ def fresh_store():
     return store
 
 
-def run_arm(arm: str, frames: int) -> tuple[list[EpisodeResult], list[int], list[int]]:
-    """跑一臂。返回 ``(逐 seed 结果, 逐 seed 新增技能数, 逐 seed 播种前技能数)``。"""
+def run_arm(
+    arm: str, frames: int
+) -> tuple[list[EpisodeResult], list[int], list[int], list[InductionFunnel | None]]:
+    """跑一臂。返回 ``(逐 seed 结果, 逐 seed 新增技能数, 逐 seed 播种前技能数, 逐 seed 漏斗)``。
+
+    漏斗是**三档分母**（attempted / passed / reused）的载体：0/33 曾经是**一个**
+    零值，它把「候选没切出来」「切出来全被拒」「入库了从不被调用」三种病压成了
+    同一句话。三档分开之后，一个零值最多只能指向一种病（docs/03 §11.8）。
+
+    ``固化关`` 臂**不建漏斗**（没有慢环，没有候选可谈）——给它填一个全 0 的
+    漏斗会被读成「切窗阶段失败」，那是把「对照臂」误诊成「病了」。
+    """
 
     results: list[EpisodeResult] = []
     gained: list[int] = []
     seeded: list[int] = []
+    funnels: list[InductionFunnel | None] = []
 
     for seed in DEFAULT_SEEDS:
         store = fresh_store()
         before = len(store.snapshot().skills)
+        counts = {"windows": 0, "positive": 0}
         if arm == "固化关":
             # **不是 None**——None 会让 run_episode 建默认慢环（见模块 docstring）。
             slow_loop = lambda trace: None  # noqa: E731
         else:
             # plasticity=False：只要技能固化，不要阈值自纠（归因见模块 docstring）。
-            slow_loop = build_slow_loop(store, plasticity=False)
+            inner = build_slow_loop(store, plasticity=False)
+
+            def slow_loop(trace, _inner=inner, _counts=counts):
+                # 漏斗头两档的分母。``candidate_counts`` 用**默认** SkillLibraryConfig
+                # ——与慢环内部那一份同源；若哪天两者分叉，InductionFunnel 的单调性
+                # 检查会**直接抛错**，不会静默算出一个对不上的数。
+                windows, positive = candidate_counts(trace)
+                _counts["windows"] += windows
+                _counts["positive"] += positive
+                return _inner(trace)
 
         result = run_episode(seed, frames=frames, store=store, slow_loop=slow_loop)
         after = len(store.snapshot().skills)
         results.append(result)
         gained.append(after - before)
         seeded.append(before)
+        if arm == "固化关":
+            funnels.append(None)
+        else:
+            funnels.append(
+                InductionFunnel(
+                    frames=result.frames,
+                    windows=counts["windows"],
+                    positive=counts["positive"],
+                    # 去重后的候选：本臂每个 seed 一份新 store，故新增数即入库数；
+                    # 去重发生在同一 seed 内（候选之间同签名），这里取入库数作下界。
+                    new_candidates=after - before,
+                    committed=after - before,
+                    reused=len(result.invoked_skills),
+                )
+            )
 
-    return results, gained, seeded
+    return results, gained, seeded, funnels
 
 
 def main(argv: list[str] | None = None) -> int:
@@ -125,7 +163,7 @@ def main(argv: list[str] | None = None) -> int:
     data = {arm: run_arm(arm, frames) for arm in arms}
 
     for arm in arms:
-        results, gained, seeded = data[arm]
+        results, gained, seeded, _funnels = data[arm]
         print(f"\n{'=' * 78}\n臂：{arm}\n{'=' * 78}")
         print_matrix(
             results,
@@ -151,7 +189,7 @@ def main(argv: list[str] | None = None) -> int:
     # ---- 验收指标（两臂并排）----
     rows: list[tuple[str, object]] = []
     for arm in arms:
-        results, gained, _ = data[arm]
+        results, gained, _, _funnels = data[arm]
         rate, rate_n = mean_defined([r.skill_call_success_rate for r in results])
         change, change_n = mean_defined([r.energy_change for r in results])
         windowed = sum(1 for r in results if r.energy_windows >= 2)
@@ -169,6 +207,35 @@ def main(argv: list[str] | None = None) -> int:
             )
         )
     print_table("验收指标（两臂并排；n = 有定义的 seed 数）", rows)
+
+    # ---- 三档分母：0/33 是哪一种零 ----
+    funnel_rows: list[tuple[str, object]] = []
+    for arm, funnels in ((a, data[a][3]) for a in arms):
+        for seed, funnel in zip(DEFAULT_SEEDS, funnels):
+            if funnel is None:
+                funnel_rows.append((f'[{arm}] seed {seed}', '无慢环（对照臂，不建漏斗）'))
+                continue
+            d = diagnose(funnel)
+            funnel_rows.append((
+                f'[{arm}] seed {seed}',
+                f'窗 {funnel.windows} → 候选 {funnel.attempted} → 去重 {funnel.new_candidates} → '
+                f'入库 {funnel.passed} → 复用 {funnel.reused}'
+                f'　→　{d.code}：{d.next_action}',
+            ))
+    print_table('技能固化漏斗（三档分母 attempted / passed / reused）', funnel_rows)
+
+    reused_total = sum(
+        len(r.invoked_skills) for r in data['固化开'][0]
+    )
+    committed_total = sum(data['固化开'][1])
+    print(
+        f'\n  固化开臂合计：入库 {committed_total} 条，被**真正调用过**的不同技能 '
+        f'{reused_total} 个；调用 {sum(r.skill_calls for r in data["固化开"][0])} 次、'
+        f'事件 {sum(r.skill_events for r in data["固化开"][0])} 次。\n'
+        '  **「0/33」说的不是「没有技能被复用」，而是「33 次调用全落在同一（少数）'
+        '条技能上，且全部失败」。** 这两句话指向完全不同的下一步：前者改调用面，'
+        '后者改那一条技能的判据/表示。三档分母的作用就是把它们分开。'
+    )
 
     # ---- 那个无生产者的坑，当场交叉验证一次 ----
     print_table(

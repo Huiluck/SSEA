@@ -114,9 +114,31 @@ def main():
         tbl.append("| [%s](%s.分析卡片.md) | %s | %s | %s | %s | %s | %s | %s |" % (nm, nm, cell(v), cell(pr), rl, cp, gr, cell(sl), cell(ld)))
     tbl.append("<!-- AUTO-TABLE-END -->")
 
+    # `--stamp-only`：只重算 {N}/{NPDF}/{MISSING} 这些**计数**，不重写总表。
+    # 卡片集由并发进程持续新增时，总表会有一批卡还没有槽位映射；这时重写会把
+    # 它们全变成 `未登记映射`，把一张有用的表变成一张全是洞的表。
+    # 所以：计数永远可以刷新，**表只在映射齐了的时候重写**。
+    stamp_only = "--stamp-only" in sys.argv[1:]
+
     t = DOC.read_text(encoding="utf-8")
-    t = re.sub(r"<!-- AUTO-TABLE-START -->.*?<!-- AUTO-TABLE-END -->", "\n".join(tbl), t, flags=re.S)
+    if stamp_only:
+        mapped = len([r for r in rows if r[5] != "?"])
+        stamp_rows = len([ln for ln in t.splitlines() if re.match(r"^\| \[[A-Za-z]", ln)])
+        t = t.replace(
+            "<!-- AUTO-TABLE-START -->",
+            "<!-- AUTO-TABLE-START -->\n"
+            f"> **总表快照**：本表覆盖 **{stamp_rows}** 张已登记映射的卡；生成时卡片集共 **{n}** 张，\n"
+            f"> 其中 **{n - mapped}** 张**尚未登记槽位映射**（生成器会点名它们）。重跑：\n"
+            "> `./.venv/Scripts/python.exe docs/papers/_tools/gen_card_index.py`（不加 `--stamp-only`）。\n",
+            1,
+        )
+    else:
+        t = re.sub(r"<!-- AUTO-TABLE-START -->.*?<!-- AUTO-TABLE-END -->", "\n".join(tbl), t, flags=re.S)
     t = t.replace("{N}", str(n)).replace("{NPDF}", str(n_pdf))
+    t = t.replace("{UNMAPPED}", str(n - mapped)) if stamp_only else t.replace(
+        "{UNMAPPED}", "0"
+    )
+    t = t.replace("{STAMPED}", str(stamp_rows if stamp_only else n))
     t = t.replace("{MISSING}", str(missing)).replace("{README_ROWS}", str(readme_rows))
     DOC.write_text(t, encoding="utf-8")
 

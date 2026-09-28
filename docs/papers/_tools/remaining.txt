@@ -1,0 +1,195 @@
+2017-05-09 TriviaQA A Large Scale Distantly Supervised Challenge Dataset for Reading.pdf
+2018 The NarrativeQA Reading Comprehension Challenge.pdf
+2018-09-25 HotpotQA A Dataset for Diverse, Explainable Multi-hop Question Answering.pdf
+2019 Natural Questions A Benchmark for Question Answering Research.pdf
+2019-09-17 Megatron-LM Training Multi-Billion Parameter Language Models Using Model.pdf
+2019-11-05 On the Measure of Intelligence.pdf
+2020-09-07 Measuring Massive Multitask Language Understanding.pdf
+2020-10-08 ALFWorld Aligning Text and Embodied Environments for Interactive Learning.pdf
+2020-11-02 Constructing A Multi-hop QA Dataset for Comprehensive Evaluation of.pdf
+2021-03-05 Measuring Mathematical Problem Solving With the MATH Dataset.pdf
+2021-07-07 Evaluating Large Language Models Trained on Code.pdf
+2021-08-16 Program Synthesis with Large Language Models.pdf
+2021-10-27 Training Verifiers to Solve Math Word Problems.pdf
+2021-12-17 WebGPT Browser-assisted question-answering with human feedback.pdf
+2022 MuSiQue Multihop Questions via Single-hop Question Composition.pdf
+2022 STaR Bootstrapping Reasoning With Reasoning.pdf
+2022 Towards Understanding the Mixture-of-Experts Layer in Deep Learning.pdf
+2022 WebShop Towards Scalable Real-World Web Interaction with Grounded Language.pdf
+2022-03-21 Self-Consistency Improves Chain of Thought Reasoning in Language Models.pdf
+2022-08-17 MultiPL-E A Scalable and Extensible Approach to Benchmarking Neural Code.pdf
+2022-10-06 ReAct Synergizing Reasoning and Acting in Language Models.pdf
+2022-11-18 PAL Program-aided Language Models.pdf
+2023 Mind2Web Towards a Generalist Agent for the Web.pdf
+2023-04-11 ChemCrow Augmenting large-language models with chemistry tools.pdf
+2023-04-11 Teaching Large Language Models to Self-Debug.pdf
+2023-05 The SciQA Scientific Question Answering Benchmark for Scholarly Knowledge.pdf
+2023-05-19 CRITIC Large Language Models Can Self-Correct with Tool-Interactive.pdf
+2023-05-25 Ghost in the Minecraft Generally Capable Agents for Open-World Environments.pdf
+2023-05-26 Large Language Models as Tool Makers.pdf
+2023-07 Challenging BIG-Bench Tasks and Whether Chain-of-Thought Can Solve Them.pdf
+2023-07 LLM-Blender Ensembling Large Language Models with Pairwise Ranking and.pdf
+2023-07 Self-Instruct Aligning Language Models with Self-Generated Instructions.pdf
+2023-07 WebCPM Interactive Web Search for Chinese Long-form Question Answering.pdf
+2023-07 When Not to Trust Language Models Investigating Effectiveness of Parametric.pdf
+2023-07-15 Think-on-Graph Deep and Responsible Reasoning of Large Language Model on.pdf
+2023-07-20 SciBench Evaluating College-Level Scientific Problem-Solving Abilities of.pdf
+2023-08-07 AgentBench Evaluating LLMs as Agents.pdf
+2023-09-29 Alphazero-like Tree-Search can Guide Large Language Model Decoding and.pdf
+2023-09-29 AutoAgents A Framework for Automatic Agent Generation.pdf
+2023-09-29 CRAFT Customizing LLMs by Creating and Retrieving from Specialized Toolsets.pdf
+2023-10-01 SELF Self-Evolution with Language Feedback.pdf
+2023-10-02 Reasoning on Graphs Faithful and Interpretable Large Language Model.pdf
+2023-10-05 DSPy Compiling Declarative Language Model Calls into Self-Improving.pdf
+2023-10-06 Language Agent Tree Search Unifies Reasoning Acting and Planning in.pdf
+2023-10-12 MemGPT Towards LLMs as Operating Systems.pdf
+2023-10-17 Self-RAG Learning to Retrieve, Generate, and Critique through.pdf
+2023-11-20 GPQA A Graduate-Level Google-Proof Q&A Benchmark.pdf
+2023-12 An autonomous laboratory for the accelerated synthesis of inorganic.pdf
+2023-12 Large Language Models Can Self-Improve.pdf
+2023-12 MoT Memory-of-Thought Enables ChatGPT to Self-Improve.pdf
+2023-12 Scaling deep learning for materials discovery.pdf
+2023-12 SelfCheckGPT Zero-Resource Black-Box Hallucination Detection for Generative.pdf
+2023-12-11 Beyond Human Data Scaling Self-Training for Problem-Solving with Language.pdf
+2024 Are More LLM Calls All You Need Towards the Scaling Properties of Compound.pdf
+2024 ReST-MCTS LLM Self-Training via Process Reward Guided Tree Search.pdf
+2024 Toward Self-Improvement of LLMs via Imagination, Searching, and Criticizing.pdf
+2024-01-02 Self-Play Fine-Tuning Converts Weak Language Models to Strong Language.pdf
+2024-01-05 CRUXEval A Benchmark for Code Reasoning, Understanding and Execution.pdf
+2024-01-25 WebVoyager Building an End-to-End Web Agent with Large Multimodal Models.pdf
+2024-02-15 A Human-Inspired Reading Agent with Gist Memory of Very Long Contexts.pdf
+2024-02-26 Language Agents as Optimizable Graphs.pdf
+2024-03-05 Cradle Empowering Foundation Agents Towards General Computer Control.pdf
+2024-04-01 Are large language models superhuman chemists.pdf
+2024-04-01 Stream of Search (SoS) Learning to Search in Language.pdf
+2024-04-22 A Survey on Self-Evolution of Large Language Models.pdf
+2024-05-01 Self-Play Preference Optimization for Language Model Alignment.pdf
+2024-05-20 OpenRLHF An Easy-to-use, Scalable and High-performance RLHF Framework.pdf
+2024-06 AGIEval A Human-Centric Benchmark for Evaluating Foundation Models.pdf
+2024-06-03 MMLU-Pro A More Robust and Challenging Multi-Task Language Understanding.pdf
+2024-06-06 AgentGym Evolving Large Language Model-based Agents across Diverse.pdf
+2024-06-11 Scaling Large Language Model-based Multi-Agent Collaboration.pdf
+2024-06-29 LiteSearch Efficacious Tree Search for LLM.pdf
+2024-07-01 AutoFlow Automated Workflow Generation for Large Language Model Agents.pdf
+2024-07-15 Think-on-Graph 2.0 Deep and Faithful Large Language Model Reasoning with.pdf
+2024-07-16 SELF-GUIDE Better Task-Specific Instruction Following via Self-Synthetic.pdf
+2024-07-29 MindSearch Mimicking Human Minds Elicits Deep AI Searcher.pdf
+2024-07-31 Large Language Monkeys Scaling Inference Compute with Repeated Sampling.pdf
+2024-08 An Iterative Associative Memory Model for Empathetic Response Generation.pdf
+2024-08 Identifying while Learning for Document Event Causality Identification.pdf
+2024-08 KnowCoder Coding Structured Knowledge into LLMs for Universal Information.pdf
+2024-08 Small Language Models Need Strong Verifiers to Self-Correct Reasoning.pdf
+2024-08 Tree-of-Counterfactual Prompting for Zero-Shot Stance Detection.pdf
+2024-08 WebVoyager Building an End-to-End Web Agent with Large Multimodal Models.pdf
+2024-08-06 Scaling LLM Test-Time Compute Optimally can be More Effective than Scaling.pdf
+2024-08-12 The AI Scientist Towards Fully Automated Open-Ended Scientific Discovery.pdf
+2024-09-05 Planning In Natural Language Improves LLM Search For Code Generation.pdf
+2024-09-28 HybridFlow A Flexible and Efficient RLHF Framework.pdf
+2024-10-14 AFlow Automating Agentic Workflow Generation.pdf
+2024-10-15 G-Designer Architecting Multi-agent Communication Topologies via Graph.pdf
+2024-10-22 CoPS Empowering LLM Agents with Provable Cross-Task Experience Sharing.pdf
+2024-10-31 Project Sid Many-agent simulations toward AI civilization.pdf
+2024-12-02 MALT Improving Reasoning with Multi-Agent LLM Training.pdf
+2025-01-08 Towards System 2 Reasoning in LLMs Learning How to Think With Meta.pdf
+2025-01-17 Evolving Deeper LLM Thinking.pdf
+2025-01-20 Agent-R Training Language Model Agents to Reflect via Iterative.pdf
+2025-01-24 Humanity's Last Exam.pdf
+2025-02-04 Multi-Agent Design Optimizing Agents with Better Prompts and Topologies.pdf
+2025-02-05 Reasoning-as-Logic-Units Scaling Test-Time Reasoning in Large Language.pdf
+2025-02-20 Learning to Solve and Verify A Self-Play Framework for Code and Test.pdf
+2025-02-20 SuperGPQA Scaling LLM Evaluation across 285 Graduate Disciplines.pdf
+2025-02-20 SurveyX Academic Survey Automation via Large Language Models.pdf
+2025-02-26 Accelerating scientific discovery with Co-Scientist.pdf
+2025-03-02 LADDER Self-Improving LLMs Through Recursive Problem Decomposition.pdf
+2025-03-05 MAS-GPT Training LLMs to Build LLM-based Multi-Agent Systems.pdf
+2025-03-07 R1-Searcher Incentivizing the Search Capability in LLMs via Reinforcement.pdf
+2025-03-12 Search-R1 Training LLMs to Reason and Leverage Search Engines with.pdf
+2025-03-25 ReSearch Learning to Reason with Search for LLMs via Reinforcement Learning.pdf
+2025-03-26 Open Deep Search Democratizing Search with Open-source Reasoning Agents.pdf
+2025-04-21 MARFT Multi-Agent Reinforcement Fine-Tuning.pdf
+2025-04-30 WebThinker Empowering Large Reasoning Models with Deep Research Capability.pdf
+2025-05-26 Alita Generalist Agent Enabling Scalable Agentic Reasoning with Minimal.pdf
+2025-05-30 REASONING GYM Reasoning Environments for Reinforcement Learning with.pdf
+2025-06-03 Adaptive Graph Pruning for Multi-Agent Communication.pdf
+2025-06-13 DeepResearch Bench A Comprehensive Benchmark for Deep Research Agents.pdf
+2025-06-13 ReVeal Self-Evolving Code Agents via Reliable Self-Verification.pdf
+2025-06-22 Deep Research Agents A Systematic Examination And Roadmap.pdf
+2025-06-29 Theoretical Modeling of Large Language Model Self-Improvement Training.pdf
+2025-06-30 SPIRAL Self-Play on Zero-Sum Games Incentivizes Reasoning via Multi-Agent.pdf
+2025-07 LLM Agents Making Agent Tools.pdf
+2025-07 MAPoRL Multi-Agent Post-Co-Training for Collaborative Large Language Models.pdf
+2025-07 Optima Optimizing Effectiveness and Efficiency for LLM-Based Multi-Agent.pdf
+2025-07 RAG-Critic Leveraging Automated Critic-Guided Agentic Workflow for.pdf
+2025-07-22 SyncLoop A Multimodal Dual-Loop Framework for Self-Improving Mathematical.pdf
+2025-07-24 Test-time Offline Reinforcement Learning on Goal-related Experience.pdf
+2025-07-25 GEPA Reflective Prompt Evolution Can Outperform Reinforcement Learning.pdf
+2025-08-05 Self-Questioning Language Models.pdf
+2025-08-06 LLM Collaboration With Multi-Agent Reinforcement Learning.pdf
+2025-08-11 HierSearch A Hierarchical Enterprise Deep Search Framework Integrating.pdf
+2025-08-12 Feedback-Driven Tool-Use Improvements in Large Language Models via.pdf
+2025-09-04 ArcMemo Abstract Reasoning Composition with Lifelong LLM Memory.pdf
+2025-09-08 SFR-DeepResearch Towards Effective Reinforcement Learning for Autonomously.pdf
+2025-09-09 Language Self-Play For Data-Free Training.pdf
+2025-09-12 DeepDive Advancing Deep Search Agents with Knowledge Graphs and Multi-Turn.pdf
+2025-09-16 Towards General Agentic Intelligence via Environment Scaling.pdf
+2025-09-16 WebWeaver Structuring Web-Scale Evidence with Dynamic Outlines for.pdf
+2025-09-18 Evolving Language Models without Labels Majority Drives Selection, Novelty.pdf
+2025-09-26 StepORLM A Self-Evolving Framework With Generative Process Supervision For.pdf
+2025-09-27 Toward Effective Tool-Integrated Reasoning via Self-Evolved Preference.pdf
+2025-09-28 SPELL Self-Play Reinforcement Learning for Evolving Long-Context Language.pdf
+2025-09-29 DeepSearch Overcome the Bottleneck of Reinforcement Learning with.pdf
+2025-09-29 LatentEvolve Self-Evolving Test-Time Scaling in Latent Space.pdf
+2025-09-29 Socratic-Zero Bootstrapping Reasoning via Data-Free Agent Co-evolution.pdf
+2025-10-01 GEM A Gym for Agentic LLMs.pdf
+2025-10-01 TOUCAN Synthesizing 1.5M Tool-Agentic Data from Real-World MCP Environments.pdf
+2025-10-09 Training-Free Group Relative Policy Optimization.pdf
+2025-10-11 Don't Just Fine-tune the Agent, Tune the Environment.pdf
+2025-10-13 Stronger-MAS Multi-Agent Reinforcement Learning for Collaborative LLMs.pdf
+2025-10-16 Towards Agentic Self-Learning LLMs in Search Environment.pdf
+2025-10-21 Search Self-play Pushing the Frontier of Agent Capability without.pdf
+2025-10-27 Multi-Agent Evolve LLM Self-Improve through Co-evolution.pdf
+2025-10-28 AgentFold Long-Horizon Web Agents with Proactive Context Management.pdf
+2025-10-28 SPICE Self-Play In Corpus Environments Improves Reasoning.pdf
+2025-10-28 Tongyi DeepResearch Technical Report.pdf
+2025-11 DeepResearcher Scaling Deep Research via Reinforcement Learning in.pdf
+2025-11 Enabling Self-Improving Agents to Learn at Test Time With Human-In-The-Loop.pdf
+2025-11 SAMULE Self-Learning Agents Enhanced by Multi-level Reflection.pdf
+2025-11 Search-o1 Agentic Search-Enhanced Large Reasoning Models.pdf
+2025-11-03 Simulating Environments with Reasoning Models for Agent Training.pdf
+2025-11-10 RLVE Scaling Up Reinforcement Learning for Language Models with Adaptive.pdf
+2025-11-17 Live-SWE-agent Can Software Engineering Agents Self-Evolve on the Fly.pdf
+2025-11-19 AccelOpt A Self-Improving LLM Agentic System for AI Accelerator Kernel.pdf
+2025-11-25 Latent Collaboration in Multi-Agent Systems.pdf
+2025-12-02 Guided Self-Evolving LLMs with Minimal Human Supervision.pdf
+2025-12-04 SIMA 2 A Generalist Embodied Agent for Virtual Worlds.pdf
+2025-12-11 Remember Me, Refine Me A Dynamic Procedural Memory Framework for.pdf
+2025-12-18 Reinforcement Learning for Self-Improving Agent with Skill Library.pdf
+2026-01-09 EnvScaler Scaling Tool-Interactive Environments for LLM Agent via.pdf
+2026-01-11 Dr. Zero Self-Evolving Search Agents without Training Data.pdf
+2026-01-12 Beyond Static Tools Test-Time Tool Evolution for Scientific Reasoning.pdf
+2026-01-23 EvoConfig Self-Evolving Multi-Agent Systems for Efficient Autonomous.pdf
+2026-03-06 Evolving Medical Imaging Agents via Experience-driven Self-skill Discovery.pdf
+2026-03-10 MM-Zero Self-Evolving Multi-Model Vision Language Models From Zero Data.pdf
+2026-03-28 Safety in Embodied AI A Survey of Risks, Attacks, and Defenses.pdf
+2026-04-02 CORAL Towards Autonomous Multi-Agent Evolution for Open-Ended Discovery.pdf
+2026-04-03 Vocabulary Dropout for Curriculum Diversity in LLM Co-Evolution.pdf
+2026-04-09 ClawBench Can AI Agents Complete Everyday Online Tasks.pdf
+2026-05-09 RewardHarness Self-Evolving Agentic Post-Training.pdf
+2026-06-20 Steer, Don't Solve Training Small Critic Models for Large Code Agents.pdf
+2026-06-23 Agon An Autonomous Large-Scale Omnidisciplinary Research System Built on.pdf
+2026-08-16 Training Agents to Evolve with Their Harness TaoLive Digital Avatar Agent.pdf
+2026-08-31 S3Gym Can LLMs Turn Self-Testing and Self-Judging into Self-Improvement.pdf
+2026-09-03 DRACO Fine-Grained Credit Assignment with Dynamic Rubrics for Long-Horizon.pdf
+A Survey on Self-Evolution of Large Language Models.pdf
+A Systematic Survey of Self-Evolving Agents.pdf
+AIRA-Compose and AIRA-Design.pdf
+AutoGen ENABLING NEXT-GEN LLM.pdf
+DeepSeek Elastic Compute (DSec).pdf
+DeepSeek-V4.1-Flash Pushing the Limits of KV Cache Compression.pdf
+Discovering Multiagent Learning Algorithms with Large Language Models.pdf
+Efficient Memory Management for Large Language Model Serving with PagedAttention.pdf
+EvolveR Self-Evolving LLM Agents through an Experience-Driven Lifecycle.pdf
+Human-LLM Compound System for Scientific Ideation through Facet R.pdf
+Literature Review Matrix.pdf
+MOOSE-Star Unlocking Tractable Training for Scientific Discovery.pdf
+Scideator Human-LLM Compound System for Scientific Ideation.pdf

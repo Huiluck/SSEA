@@ -193,6 +193,12 @@ class SkillLibrary:
 
         return compile_skills(trace, self.config)
 
+    def funnel_counts(self, trace: Sequence[StepRecord]) -> tuple[int, int]:
+        """本库配置下的 ``(切窗数, 候选数)``。委托模块级 ``candidate_counts``——
+        与 ``compile_from_trace`` 共用同一份切段规则，不另写一遍。"""
+
+        return candidate_counts(trace, self.config)
+
     def new_skills(
         self, candidates: Iterable[Skill]
     ) -> tuple[Skill, ...]:
@@ -496,10 +502,14 @@ def _pre_action_energy(rec: StepRecord) -> float:
     return rec.observation.body.energy - rec.feedback.energy_change
 
 
-def _segments(
-    trace: Sequence[StepRecord], cfg: SkillLibraryConfig
-) -> tuple[tuple[tuple[StepRecord, ...], float], ...]:
-    """trace → [((帧...), 净能量变化)]，只留净收益为正的段。"""
+def _direct_success_runs(
+    trace: Sequence[StepRecord],
+) -> tuple[tuple[StepRecord, ...], ...]:
+    """trace → 极大连续「直接成功」段。**切段规则只此一份。**
+
+    抽出来是为了让漏斗的分母与候选的产出走**同一段代码**：写成两份必然漂移，
+    而漂移的表现是「漏斗说切了 12 窗、编译说产出 5 条」这种谁都对不上的数。
+    """
 
     runs: list[list[StepRecord]] = []
     current: list[StepRecord] = []
@@ -511,14 +521,46 @@ def _segments(
             current = []
     if current:
         runs.append(current)
+    return tuple(tuple(run) for run in runs)
+
+
+def _windowed(
+    trace: Sequence[StepRecord], cfg: SkillLibraryConfig
+) -> tuple[tuple[tuple[StepRecord, ...], float], ...]:
+    """trace → [((帧...), 净能量变化)]，**不过滤**。
+
+    漏斗的**分母在这里**：``compile_skills`` 只返回净收益为正的那些，于是
+    「切出来又被能量判据丢掉多少」在生产代码里是**看不见**的。
+    """
 
     out: list[tuple[tuple[StepRecord, ...], float]] = []
-    for run in runs:
+    for run in _direct_success_runs(trace):
         for chunk in _windows(run, cfg):
             total = sum(rec.feedback.energy_change for rec in chunk)
-            if total > 0.0:
-                out.append((tuple(chunk), total))
+            out.append((tuple(chunk), total))
     return tuple(out)
+
+
+def _segments(
+    trace: Sequence[StepRecord], cfg: SkillLibraryConfig
+) -> tuple[tuple[tuple[StepRecord, ...], float], ...]:
+    """trace → [((帧...), 净能量变化)]，只留净收益为正的段。"""
+
+    return tuple((chunk, total) for chunk, total in _windowed(trace, cfg) if total > 0.0)
+
+
+def candidate_counts(
+    trace: Sequence[StepRecord], config: SkillLibraryConfig | None = None
+) -> tuple[int, int]:
+    """返回 ``(切窗数, 净收益为正的候选数)`` —— 漏斗的头两档分母。
+
+    **attempted 是第二个数，不是第一个。** 第一个才是真正的上游：「切窗阶段就
+    丢了」与「能量判据丢了」是两种病，指向两个不同的下一步（docs/03 §11.8）。
+    """
+
+    cfg = config or SkillLibraryConfig()
+    windowed = _windowed(trace, cfg)
+    return len(windowed), sum(1 for _chunk, total in windowed if total > 0.0)
 
 
 def _windows(

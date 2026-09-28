@@ -67,6 +67,16 @@ class SkillStats:
     executed_frames: int = 0
     last_used: float = 0.0
 
+    @property
+    def invocations(self) -> int:
+        """跑完或中止过的次数 —— 漏斗第三档 ``reused`` 的逐技能来源。
+
+        **只有 ``submit`` 不算。** precondition 可能在 submit 时就把调用挡回去，
+        那是「想调用」而不是「调用到」；两者混同会把「gate 太窄」读成「技能被用了」。
+        """
+
+        return self.success_count + self.failure_count
+
 
 @dataclass
 class SkillRun:
@@ -218,6 +228,16 @@ class SkillRunner:
 
     def stats_for(self, skill_id: str) -> SkillStats:
         return self.stats.setdefault(skill_id, SkillStats())
+
+    def invoked_skill_ids(self) -> tuple[str, ...]:
+        """被**真正调用过**至少一次的技能 id（按 id 排序）。
+
+        这是漏斗第三档 ``reused`` 的分子：它是**不同技能的个数**，不是调用次数。
+        调用次数已经在 ``EpisodeResult.skill_calls`` 上；把两者混起来，正是
+        「0/33」这句话会同时被读成「没有技能被复用」与「调用全部失败」的原因。
+        """
+
+        return tuple(sorted(sid for sid, st in self.stats.items() if st.invocations > 0))
 
     def updated_skill(self, skill_id: str) -> Skill | None:
         """产出带最新统计的 Skill 副本，供慢环提案使用。

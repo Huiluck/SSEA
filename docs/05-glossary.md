@@ -31,6 +31,7 @@
 | 结构快照 | 快环每帧看到的那一份只读结构，实现为 `FastLoopContext`。字段注解是 `Mapping[...]`，且 store 侧按槽深拷贝 | 08 §2.1、`SSEA/sse_protocols/fast_loop_context.py` |
 | 结构类别 | 快照里可被慢环替换的五类内容：`skills` / `rules` / `adapters` / `thresholds` / `retrieval` | `SSEA/sse_protocols/structure_store.py` 的 `STRUCTURE_KINDS` |
 | 结构管理面 | `SSEA/sse_protocols/` 整个包。它**知道全部五个类别**（建档、校验、提交都要遍历它们），因此**不能**用来判定某个类别有没有消费者 | 14 §6.3.7 设计点二 |
+| **ΔP（元程序）** | **管记忆/上下文的程序**（「记忆技能」）：声明**触发谓词**、**操作类型白名单**、**预算**——是**声明**不是流程。**不是 ΔM**（不是内容）、**不是 ΔS**（不得带动作序列）、**不是 Δθ**（不落权重）。**经现行的 `rules` 类别发布**，因此结构类别仍是五类、版本槽不变。可遗传性归 **GenePackage 本能段**（跨代传「怎么记」，不传「记了什么」） | [03](03-architecture-spec.md) **§12 裁决五** |
 | 遗传面 | 基因包 `GenePackage` 那一条线：权重 / 记忆 / 技能三分离里可保存、可恢复、可变异、可继承的那一面 | 07 §9 |
 | 四权分立 | 「提什么」`ExperienceCompiler` / `LocalPlasticity` → 「在不在边界内」`PlasticityController.allowed_scope` → 「能不能安全应用」`VerificationGate`（不打分）→ 「应用不应用」`StructureStore.commit`。四件事四个部件，任何一个都不许兼第二职 | 14 §2.4 |
 | 观察员面 | 自然语言所处的位置：**只能观察，不进入控制闭环**。语言模块不可被模型自己修改 | 07 §7.2、07 §17 |

@@ -34,6 +34,10 @@
 ==========================  ============================================
 
 新增两个协议组件（07 中没有）：``StructureStore`` 与 ``FastLoopContext``。
+
+另有一个**不属于**模型↔环境接口、但按同一套约束（stdlib-only / frozen dataclass /
+可序列化）实现的协议：``judgement_health``——验收判据的体检（docs/03 §11）。
+它住在这里的理由是「被多处引用的规则住协议层」：``experiments/`` 与 docs 同时引用它。
 """
 
 from .action import (
@@ -55,6 +59,22 @@ from .event_vector import EVENT_TYPES, EventVector
 from .fast_loop_context import FastLoopContext
 from .feedback import Feedback
 from .gene import MUTATION_SCOPES, NON_MUTABLE, GenePackage
+from .induction_funnel import (
+    DIAGNOSIS,
+    InductionFunnel,
+    diagnose as diagnose_funnel,
+)
+from .judgement_health import (
+    CLAUSES,
+    FAIL,
+    PASS,
+    UNKNOWN,
+    WARN,
+    JudgementDeclaration,
+    JudgementHealth,
+    assess,
+    v_tau,
+)
 from .memory import HERITABLE_TYPES, MEMORY_TYPES, MemoryItem
 from .observation import Observation
 from .object_vector import ObjectVector
@@ -119,6 +139,19 @@ __all__ = [
     "STRUCTURE_KINDS",
     "PROPOSAL_KIND_MAP",
     "FastLoopContext",
+    # 验收方法学协议（docs/03 §11）：判据的体检与技能固化的三档分母
+    'InductionFunnel',
+    'diagnose_funnel',
+    'DIAGNOSIS',
+    'JudgementDeclaration',
+    'JudgementHealth',
+    'assess',
+    'v_tau',
+    'CLAUSES',
+    'PASS',
+    'WARN',
+    'FAIL',
+    'UNKNOWN',
     # 序列化（Milestone 1 验收：所有接口可序列化为 JSON）
     "to_json_dict",
     "from_json_dict",
