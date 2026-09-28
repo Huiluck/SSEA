@@ -38,6 +38,27 @@ Skill 是同一条纪律，也与 08 §2.1「失败天然回滚」同源：Gate 
 的情境匹配要负责的事。闭环技能组合（以感知为条件的子动作选择）留到 v0.4+，
 见 docs/11。
 
+``precondition`` 是 option 的 initiation set
+--------------------------------------------
+``Skill`` 在结构上就是一个 **option**（半 MDP，Sutton / Precup / Singh 1999）：
+
+    precondition     ＝ initiation set —— 「在哪些状态下可以启动」，状态集合的谓词
+    action_sequence  ＝ policy        —— 启动之后做什么
+
+所以 ``precondition`` 记的必须是 **option 被观测到可以启动的那个状态**，即
+**首帧动作前**的能量（``_pre_action_energy``），**不是**首帧动作后的能量。
+
+这个区别不是精度问题，是**描述被当成了判据**：``StepRecord.observation`` 记的是
+**动作后**的状态，拿它当门槛，等于要求「复现这条技能自己刚制造出来的峰值」——
+最好情形也只剩零余量，于是技能出生之后闸 1 能过的帧往往只剩它出生的那一帧。
+实测（2026-09-28，债务 26）：seed 0 编出的技能 ``min_energy = 0.99``，而能量
+上限是 1.0；主环 33 次调用**全部**卡在 ``precondition_failed``。
+
+闸在哪一侧：``SkillRunner.report`` 检查时拿到的是**本帧动作后**的身体状态，而
+它恰好是**下一帧动作前**的状态——也就是「要不要继续这条 option」的那个决策点。
+所以按 initiation set 的语义，检查点本身是对的；错的只是被拿来比较的那个**数**
+取错了状态。``_pre_action_energy`` 把那个数取回它该在的状态。
+
 ``energy_cost`` 是**每帧毛**成本
 ---------------------------
 Skill Runner 的中止判据是 ``body.energy < energy_cost × 剩余帧数``
@@ -377,11 +398,16 @@ def compile_skills(
 
 
 def _skill_for(chunk: Sequence[StepRecord], total: float) -> Skill:
-    """一段成功轨迹 → 一条技能。"""
+    """一段成功轨迹 → 一条技能。
+
+    ``precondition`` 取**首帧动作前**的能量，即这条 option 被观测到「可以在此
+    启动」的那个状态——initiation set 上的一个样本。取动作后的能量会把它变成
+    「复现这条技能自己刚制造的峰值」，见模块 docstring 与 ``_pre_action_energy``。
+    """
 
     first, last = chunk[0], chunk[-1]
     sequence = tuple(rec.executed_action for rec in chunk)
-    precondition = {"min_energy": round(first.observation.body.energy, 6)}
+    precondition = {"min_energy": round(_pre_action_energy(first), 6)}
     signature = _signature(sequence, precondition)
     outcome = _outcome_marker(last.feedback)
     return Skill(
@@ -446,6 +472,28 @@ def _is_direct_success(rec: StepRecord) -> bool:
         and rec.feedback.action_success
         and rec.executed_action is rec.decoded_action
     )
+
+
+def _pre_action_energy(rec: StepRecord) -> float:
+    """``rec`` 这一帧**动作前**的身体能量——option 的 initiation state。
+
+    ``StepRecord.observation`` 是**动作后**的状态：``FastLoop._step_run`` 把它
+    记在 ``Environment.step`` **之后**。而模型是拿着动作**前**的那份观测做决策的
+    （``_step_run`` 开头的 ``obs = self.observation``），本函数要的是后者。
+
+    两者之间隔着这一帧自己的动作后果，所以不能直接读 ``observation``。
+    还原式是精确的，不是估计：``Environment._finish_step`` 把 ``energy_change``
+    定义成 ``post - energy_before``，而 ``energy_before`` 取在 ``step()`` 的开口处
+    ——即这一帧决策所用的那份观测里的能量。故 ``post - change`` 恒等于动作前能量。
+    夹取（``max(0.0, ...)`` / ``min(1.0, ...)``）不破坏它：夹取已经体现在 ``post``
+    与 ``change`` 里，两者相减把它抵消掉了。
+
+    ⚠️ 这条恒等式是**跨模块假设**（环境定义、技能库消费），故由
+    ``tests/test_skill_library.py`` 的 ``TestPreActionEnergyIsTheDecisionState``
+    在真实快环 trace 上钉住——它不是纸面推导，是一条会红的断言。
+    """
+
+    return rec.observation.body.energy - rec.feedback.energy_change
 
 
 def _segments(

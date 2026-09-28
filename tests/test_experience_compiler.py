@@ -131,11 +131,19 @@ class TestCompilesRealTraces:
         c = compiler()
         r1 = c.compile(successful_trace(5, 0.5))
         r2 = c.compile(successful_trace(5, 0.7))
-        ids = {p.proposal_id for p in r1.proposals + r2.proposals}
-        assert len(ids) == len(r1.proposals) + len(r2.proposals)
+        every = r1.proposals + r2.proposals
+        ids = {p.proposal_id for p in every}
+        assert len(ids) == len(every)
         assert all(i.startswith("exp-") for i in ids)
-        # id 里就带着目标——审计日志不必翻 payload 才知道这是关于哪条技能的
-        assert all(i == f"exp-{p.target}" for i, p in zip(sorted(ids), r1.proposals))
+        # id 里就带着目标——审计日志不必翻 payload 才知道这是关于哪条技能的。
+        #
+        # 旧写法是 ``zip(sorted(ids), r1.proposals)``：它拿两个集合的**排序**去配对，
+        # 于是只有当 ``r1`` 的 skill_id 恰好排在 ``r2`` 前面时才对得上。那些 id 是
+        # sha1 前 10 位，排序与"谁先编译"无关——**这条断言一直在靠巧合通过**。
+        # 2026-09-28 债务 26 修完（precondition 取值改变 → 签名改变 → hash 改变）
+        # 它才现形。改成对**每一条**提案直接断映射：顺序无关，且比旧写法覆盖更全
+        # （旧写法只查了 r1 那一条）。
+        assert all(p.proposal_id == f"exp-{p.target}" for p in every)
 
     def test_same_content_gives_the_same_id(self) -> None:
         """内容相同 → id 相同。这样重复提案在日志里**看起来就是重复的**。"""

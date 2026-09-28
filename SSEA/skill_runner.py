@@ -265,6 +265,19 @@ def _precondition_holds(skill: Skill, body: BodyState) -> bool:
 
     第一阶段只支持 ``min_energy`` 一个键——协议里 ``precondition`` 是自由
     dict，加键需同步扩展此处，并由测试固定行为。
+
+    ``min_energy`` 是 option 的 **initiation set** 在这个阶段的形式：一个下界，
+    即「能量 ≥ X」这个状态集合的谓词（Sutton / Precup / Singh 1999）。下界取
+    **观察到的那个可启动状态**——由 ``skill_library._pre_action_energy`` 从首帧
+    的**动作前**能量导出，不是动作后的能量。取错了那一侧，判据就变成「复现
+    这条技能自己刚制造出来的峰值」，见 ``skill_library`` 模块 docstring。
+
+    ⚠️ 本函数在 ``report`` 里被调用，拿到的是**本帧动作后**的状态——而那恰好是
+    **下一帧动作前**的状态，也就是「要不要继续这条 option」的决策点，所以检查
+    的位置是对的。**不要**把它挪到 ``submit``：那里动作还没执行，技能调用会
+    原样落进环境，而 ``skill`` 通道在环境侧没有消费者（债务 27），
+    于是那一帧会被报成 ``action_success=True`` 的空转并被 ``_is_direct_success``
+    收进可编译段（债务 28）。
     """
 
     pre = skill.precondition

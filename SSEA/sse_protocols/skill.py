@@ -26,6 +26,12 @@ class Skill:
     ``precondition`` 由 **Skill Runner** 在逐帧执行前后检查（08 §2.3）：
     前置条件不再满足即中断并回报 ``SKILL_FAILURE``。
 
+    ``precondition`` 的语义是 option 的 **initiation set**（半 MDP，
+    Sutton / Precup / Singh 1999）——「在哪些状态下可以启动」，一个**状态集合
+    的谓词**；``action_sequence`` 是这个 option 的 policy。所以它记的是
+    **观测到可以启动的那个状态**，不是事后复现某个瞬时标量：权威生产者是
+    ``skill_library._skill_for``，它取首帧的**动作前**能量（债务 26）。
+
     ``success_count`` / ``failure_count`` / ``last_used`` 由 Skill Runner
     累计，同时是 instinct adapter 内化判定的输入（见 ``is_consolidatable``）。
     """

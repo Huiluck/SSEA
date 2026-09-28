@@ -22,6 +22,12 @@
 | [WebRL](WebRL.分析卡片.md) | B 零件采用 | P2 | 从失败造训练任务的自演化课程 + 置信过滤 + 错误分类法；权重 RL 不进模型 |
 | [Misevolve](Misevolve.分析卡片.md) | **A 核心借鉴** | P1 | 模型/记忆/工具/工作流四路径误演化威胁模型与红队验收清单；自演化安全治理依据 |
 | [LightMem](LightMem.分析卡片.md) | B 零件采用 | P1 | 摄入压缩 + 主题分段 + 睡眠期离线巩固 + 软更新；记忆效率工程与 C4 记账模板 |
+| [SEDM](SEDM.分析卡片.md) | B 零件采用 | P1 | SCEC 自包含打包 + A/B 准入验证 + 跨域抽象重验；记忆准入官 |
+| [Mem0](Mem0.分析卡片.md) | B 零件采用 | P1 | 事实抽取 + ADD/UPDATE/DELETE/NOOP 分类 CRUD + 实体关系图；生产级记忆参照 |
+| [SkillWeaver](SkillWeaver.分析卡片.md) | B 零件采用 | P1 | 技能提案-练习-合成-打磨流水线 + 强→弱 API 继承；网页版技能构造 |
+| [MaAS](MaAS.分析卡片.md) | C 思想启发 | P2 | 架构超网分布 + 查询条件化早退 + 成本约束；L4 连续路线对照 ADAS |
+| [Genie](Genie.分析卡片.md) | B 零件采用 | P2 | 无监督生成可玩世界：潜在动作 + ST-Transformer + MaskGIT；Dream-RSI 的生成延续件 |
+| [Reflexion](Reflexion.分析卡片.md) | B 零件采用 | P2 | 试错-评估-反思外环经典形状 + 自写测试启发式；语言通道待去语言化 |
 
 ## 裁决等级
 

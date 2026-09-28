@@ -154,6 +154,21 @@ def successful_run(n: int, *, energy: float = 0.2) -> tuple:
     return tuple(record(frame=i, energy=energy) for i in range(n))
 
 
+def consistent_run(before, changes) -> tuple:
+    """一段**物理自洽**的轨迹：``before`` 是各帧动作前能量，``changes`` 是各帧增量。
+
+    动作后能量由 ``before[i] + changes[i]`` 算出，不由调用方各写一个数。
+    这是债务 26 的夹具纪律：旧夹具把 ``body_energy`` 写成恒定常数、而
+    ``energy_change`` 每帧不为零，两者**互相矛盾**，于是「动作前 / 动作后」
+    与「首帧 / 末帧」在那份夹具上不可区分——测试守不住它名字所指的东西。
+    """
+
+    return tuple(
+        record(frame=i, body_energy=round(b + c, 6), energy=c)
+        for i, (b, c) in enumerate(zip(before, changes))
+    )
+
+
 PASS = GateResult(passed=True)
 FAIL = GateResult(passed=False, reason="回归未过", stage_failed="regression")
 
@@ -259,9 +274,53 @@ class TestCompiledSkillFields:
     """技能字段：前置条件、每帧能量成本、来源标记。"""
 
     def test_precondition_records_starting_energy(self) -> None:
-        trace = tuple(record(frame=i, body_energy=0.75) for i in range(3))
+        """``min_energy`` 是首帧**动作前**的能量——option 的 initiation state。
+
+        债务 26（2026-09-28 修）：旧版本取的是 ``observation.body.energy``，
+        而 ``StepRecord.observation`` 是**动作后**的状态，于是判据变成
+        「复现这条技能自己刚制造出来的峰值」。旧夹具把 ``body_energy`` 写成
+        恒定常数、``energy_change`` 却每帧 +0.1，两者互相矛盾，所以它同时
+        放过了「取动作后」与「取末帧」两个变异——名字对，守不住。
+        """
+
+        # 动作前能量 0.30 → 0.50 → 0.60；增量 +0.20 / +0.10 / -0.05（净 +0.25）
+        trace = consistent_run((0.30, 0.50, 0.60), (0.20, 0.10, -0.05))
         out = lib().compile_from_trace(trace)
-        assert out[0].precondition == {"min_energy": 0.75}
+
+        assert len(out) == 1
+        assert out[0].precondition == {"min_energy": pytest.approx(0.30)}
+        # 不是首帧动作后（0.50），也不是末帧动作前（0.60）——两个变异各有断言守着，
+        # 见下面两条。
+
+    def test_precondition_is_not_the_post_action_energy(self) -> None:
+        """点名债务 26 的那个具体错法：读 ``observation.body.energy``（动作后）。
+
+        这条断言的存在理由只有一个：让「改回动作后能量」这个变异**有名字地红**。
+        旧夹具做不到这件事（见上一条的 docstring），这正是它被记成假守卫的原因。
+        """
+
+        trace = consistent_run((0.30, 0.50, 0.60), (0.20, 0.10, -0.05))
+        out = lib().compile_from_trace(trace)
+        first = trace[0]
+
+        assert out[0].precondition["min_energy"] != pytest.approx(
+            first.observation.body.energy, abs=1e-9
+        ), "min_energy 取的是动作后能量——债务 26 复发"
+        assert out[0].precondition["min_energy"] == pytest.approx(
+            first.observation.body.energy - first.feedback.energy_change
+        )
+
+    def test_precondition_comes_from_the_first_frame_not_the_last(self) -> None:
+        """第二个变异：从末帧取能量。旧夹具里三帧 ``body_energy`` 全等，它看不见。"""
+
+        trace = consistent_run((0.30, 0.50, 0.60), (0.20, 0.10, -0.05))
+        out = lib().compile_from_trace(trace)
+        last = trace[-1]
+
+        assert out[0].precondition["min_energy"] == pytest.approx(0.30)
+        assert out[0].precondition["min_energy"] != pytest.approx(
+            last.observation.body.energy - last.feedback.energy_change
+        ), "min_energy 取的不是首帧——initiation state 取错了位置"
 
     def test_action_sequence_is_the_executed_actions(self) -> None:
         trace = tuple(
@@ -368,6 +427,81 @@ class TestCompiledSkillFields:
             )
         )
         assert base[0].skill_id == noisy[0].skill_id
+
+
+# ----------------------------------------------------------------------
+#  initiation state 的还原式（跨模块恒等式）
+# ----------------------------------------------------------------------
+
+
+class TestPreActionEnergyIsTheDecisionState:
+    """``_pre_action_energy`` 的还原式是一条**跨模块恒等式**，这里是它的钉子。
+
+    它声称 ``observation.body.energy - feedback.energy_change`` 等于这一帧
+    **动作前**的能量，即模型做这次决策时看到的那份观测里的能量。技能库把这个数
+    写进 option 的 initiation set（债务 26），所以恒等式一旦不成立，编出来的
+    ``precondition`` 就是另一个数——**而不会有任何东西报错**。
+
+    这条恒等式两端分属两个模块：环境定义 ``energy_change = post - energy_before``，
+    快环把 ``observation`` 记在动作**之后**。合流点就是下面这条断言。
+
+    为什么不用 ``skill_library._pre_action_energy`` 自证：拿被测函数算期望值，
+    它写错时两边一起错，断言照绿。所以这里用的是**独立的**算术。
+    """
+
+    def _trace(self, frames: int = 40) -> list:
+        loop = FastLoop(
+            Environment(seed=7),
+            make_context(),
+            config=FastLoopConfig(max_frames=frames, min_sleep_frames=3),
+        )
+        self.initial_energy = loop.observation.body.energy
+        loop.run(frames)
+        return list(loop.trace())
+
+    def test_first_run_frame_is_measured_from_the_reset_observation(self) -> None:
+        """第 0 帧没有"上一帧"，它的动作前状态是 ``reset()`` 的那份观测。"""
+
+        trace = self._trace()
+        first = trace[0]
+        assert first.state == STATE_RUN
+        assert first.observation.body.energy == pytest.approx(
+            self.initial_energy + first.feedback.energy_change, abs=2e-6
+        )
+
+    def test_each_run_frame_is_measured_from_the_previous_state(self) -> None:
+        """相邻两帧：本帧动作前能量 = 上一帧动作后能量。
+
+        只比**相邻的 RUN 对**——中间隔着 SLEEP / WAKE 时环境自己动过能量
+        （``rest()`` 会恢复），等式不该成立，也不该被拿来当成反例。
+        """
+
+        trace = self._trace()
+        pairs = 0
+        for prev, cur in zip(trace, trace[1:]):
+            if prev.state != STATE_RUN or cur.state != STATE_RUN:
+                continue
+            assert cur.observation.body.energy == pytest.approx(
+                prev.observation.body.energy + cur.feedback.energy_change,
+                abs=2e-6,
+            ), f"第 {cur.frame} 帧：能量账对不上，"\
+               "``observation - energy_change`` 不再等于动作前状态"
+            pairs += 1
+        assert pairs >= 3, "RUN 帧太少，这条断言等于没跑"
+
+    def test_the_identity_is_not_vacuous(self) -> None:
+        """恒等式必须真的在区分：至少要有一帧的能量增量不为零。
+
+        若所有帧的 ``energy_change`` 都是 0，那么"动作前 = 动作后"成立得毫无
+        信息量，上面两条断言也会变成恒真——**这正是旧夹具的病**。
+        """
+
+        trace = self._trace()
+        moved = [
+            r for r in trace
+            if r.state == STATE_RUN and abs(r.feedback.energy_change) > 1e-9
+        ]
+        assert moved, "整条轨迹能量零变化：还原式没有被检验到"
 
 
 # ----------------------------------------------------------------------
