@@ -37,7 +37,7 @@
 
 - 生产代码：[`SSEA/`](../SSEA/)（含 `sse_protocols/` 协议层）
 - 测试：[`tests/`](../tests/) ｜ 验收实验：[`experiments/`](../experiments/)
-- 当前基线：**910 passed, 1 skipped**；七条验收实验跑通五条（详见 [06](06-status-roadmap.md)）。
+- 当前基线：**915 passed, 1 skipped**；七条验收实验跑通五条（详见 [06](06-status-roadmap.md)）。
 
 > ⚠️ [03](03-architecture-spec.md) §8 的三项裁决是**设计层**修订，尚未落到代码；
 > 当前基线仍是裁决前的实现。其中「前瞻预演」有**硬门槛**：必须先定义并实测

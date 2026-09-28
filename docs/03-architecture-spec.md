@@ -3023,7 +3023,7 @@ SSEA 只用回顾，是**把同一套机制用窄了**。而前瞻预演恰好�
 | Milestone 5 验收标准应按 **mimetic 速率**定，不按 mythic 速率定 | **待写入** M5 规划（M5 尚未开始，正是定标准的时候） | [02](02-nonverbal-cognition.md) §6.3(2) |
 | 实验 1 缺「用语言」对照臂 | **仍开放**；⚠️补对照臂与 C2 冲突，须走 [04](04-boundaries.md) §3 突破清单流程 | [02](02-nonverbal-cognition.md) §6.4 |
 | `ActionConstraints` 从枚举式升级为关系式（affordance） | **仍开放**；⚠️该函数横跨模型/生态边界，需新增一条平局裁决 | [02](02-nonverbal-cognition.md) §6.5 |
-| 债务 26 的修法：用 options / 半 MDP 的 **initiation set** 语义重定义 `precondition`（状态谓词，不是瞬时标量下界） | **方向已给，未实现** | [02](02-nonverbal-cognition.md) §3.3 |
+| 债务 26 的修法：用 options / 半 MDP 的 **initiation set** 语义重定义 `precondition`（状态谓词，不是瞬时标量下界） | **已实现「能量 > X」这一半**（2026-09-28，`skill_library._pre_action_energy` 取首帧动作前能量）；**「且目标可及」那一半仍开放**（协议只支持 `min_energy` 一个键） | [02](02-nonverbal-cognition.md) §3.3、[06](06-status-roadmap.md) §3.3 |
 | **技能嵌套调用**（`action_sequence` 内能否再调一个 `Skill`） | **已于 2026-09-28 裁决**：第一阶段**禁止**，且须在协议级强制。见 §9 | §9 |
 
 ---
