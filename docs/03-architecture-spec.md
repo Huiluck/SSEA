@@ -3341,6 +3341,6 @@ C8 的正文写的是：
 |---|---|---|
 | 1 | **ρ 的取值** | ✅ 已定 **0.3**（世界常量）；⚠️ 这是**标定不是推导** |
 | 2 | **代际范围** | ✅ 已定 **直系 1 代** |
-| 3 | 两个祖先技能 precondition 相同、动作序列不同时的仲裁 | 仍开放；目前只有「过门 + 本代淘汰」 |
-| 4 | `HeritableFilter` 的 `retrieval_count ≥ N` 的 **N** | 理论根据已有（mimetic 需频次补偿），**数没有** |
+| 3 | 两个祖先技能 precondition 相同、动作序列不同时的仲裁 | ✅ **已裁决（2026-09-28）：不需要仲裁机制**——见 [theory-design-plan.md](theory-design-plan.md) §3.4.3。理由：`precondition` 退化为单标量，「同前置条件」判不了「同一情境」；而同一性已由 `skill_id` 处理。真正要修的是 `prunable()` 不淘汰「从未调用者」这条限定 |
+| 4 | `HeritableFilter` 的 `retrieval_count ≥ N` 的 **N** | ✅ **已展开并关闭（2026-09-28）**：**N 早已是 1**，而 1 是它唯一的免标定取值（「用过 vs 没用过」）。展开后发现真问题是另外两个：① **`HERITABLE_TYPES = {RULE, SKILL}` 无生产者**——实测 88 条记忆里 RULE/SKILL **0 条**，`heritable()` 恒空（详见 [theory-design-plan.md](theory-design-plan.md) §3.4.4）；② **θ 与 N 共线**（`corr = 0.5596`），「两道门」实为一道 |
 
