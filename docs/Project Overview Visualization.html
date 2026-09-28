@@ -1,0 +1,142 @@
+整合报告已生成。现在将其交付，并附上一张可渲染的架构与证据总览图。整合报告已生成。现在将其交付，并附上一张可渲染的架构与证据总览图。
+
+已通读 docs 下全部 16 篇编号文档并完成整合，报告已交付（`docs/17-integrated-synthesis.md`）。核心结论与全景图如下。
+
+**一句话判断**：SSEA 用「生存控制架构」替换「语言生成架构」，工程底座（协议、双环、注入面、记忆、技能、验证门、经验编译器、可塑性）已由 910 项测试守住并能连续闭环；但「架构有效」尚无证据——第一组对照数字暴露的是**判据（尺子）坏了两处、坏法不同**，下一步应「修判据取证」而非「补组件」。
+
+```html type="renderer"
+<html style="margin:0;padding:0;">
+<title>SSEA 架构与证据总览</title>
+<div style="width:100%;box-sizing:border-box;font-family:'Segoe UI','Microsoft YaHei',sans-serif;color:#1f2937;font-size:14px;line-height:1.5;padding:4px;">
+
+  <div style="font-size:19px;font-weight:700;margin:2px 0 2px;">SSEA — 生存式自演化代理架构 · v0.3.1</div>
+  <div style="color:#475569;margin-bottom:12px;">不是「更小的 Transformer」，而是把语言生成架构换成生存控制架构；自然语言只作观察员接口，不进控制闭环。</div>
+
+  <!-- 架构三栏 -->
+  <div style="display:flex;flex-wrap:wrap;gap:10px;align-items:stretch;">
+
+    <!-- 快环 -->
+    <div style="flex:1 1 250px;min-width:240px;border:2px solid #0f766e;border-radius:10px;background:#f0fdfa;padding:10px;">
+      <div style="font-weight:700;color:#0f766e;margin-bottom:8px;">快环 FSL · 实时控制</div>
+      <div style="display:flex;flex-direction:column;gap:5px;">
+        <div style="background:#fff;border:1px solid #99f6e4;border-radius:6px;padding:5px 8px;">观测 o_t</div>
+        <div style="text-align:center;color:#0f766e;">▼</div>
+        <div style="background:#fff;border:1px solid #99f6e4;border-radius:6px;padding:5px 8px;">感知编码器</div>
+        <div style="text-align:center;color:#0f766e;">▼</div>
+        <div style="background:#fff;border:1px solid #99f6e4;border-radius:6px;padding:5px 8px;">状态核心 StateCore（GRU）</div>
+        <div style="text-align:center;color:#0f766e;">▼</div>
+        <div style="background:#fff;border:1px solid #99f6e4;border-radius:6px;padding:5px 8px;">动作解码器 → 混合动作<span style="color:#64748b;">（连续+离散+参数+技能）</span></div>
+        <div style="text-align:center;color:#0f766e;">▼</div>
+        <div style="background:#fff;border:1px solid #99f6e4;border-radius:6px;padding:5px 8px;">技能执行器 → 环境</div>
+        <div style="text-align:center;color:#0f766e;">▼ 反馈</div>
+        <div style="background:#ccfbf1;border-radius:6px;padding:5px 8px;font-size:13px;">o₊₁, f_t（含 prediction_error）</div>
+      </div>
+      <div style="margin-top:8px;font-size:12.5px;color:#0f766e;">侧输入：记忆检索 retrieve(p_t) ｜ 代谢监控 drive</div>
+    </div>
+
+    <!-- 注入面 -->
+    <div style="flex:1 1 200px;min-width:210px;border:2px solid #334155;border-radius:10px;background:#f8fafc;padding:10px;display:flex;flex-direction:column;">
+      <div style="font-weight:700;color:#334155;margin-bottom:6px;">唯一结构注入面</div>
+      <div style="background:#334155;color:#fff;border-radius:6px;padding:7px 8px;font-weight:600;text-align:center;">FastLoopContext<br>不可变快照</div>
+      <div style="text-align:center;color:#b45309;font-size:12.5px;margin:6px 0;">▲ 慢环发布新版本　｜　快环读快照 ▼</div>
+      <div style="font-size:13px;font-weight:600;margin-bottom:4px;">四条结构性质：</div>
+      <div style="display:flex;flex-direction:column;gap:4px;font-size:13px;">
+        <div style="background:#fff;border:1px solid #cbd5e1;border-radius:5px;padding:4px 7px;">快环零改动</div>
+        <div style="background:#fff;border:1px solid #cbd5e1;border-radius:5px;padding:4px 7px;">失败天然回滚（不应用即无需回滚）</div>
+        <div style="background:#fff;border:1px solid #cbd5e1;border-radius:5px;padding:4px 7px;">可遗传</div>
+        <div style="background:#fff;border:1px solid #cbd5e1;border-radius:5px;padding:4px 7px;">可审计</div>
+      </div>
+      <div style="margin-top:auto;font-size:12px;color:#64748b;padding-top:8px;">Store 无 rollback/undo API —— 是设计不是遗漏</div>
+    </div>
+
+    <!-- 慢环 -->
+    <div style="flex:1 1 250px;min-width:240px;border:2px solid #1d4ed8;border-radius:10px;background:#eff6ff;padding:10px;">
+      <div style="font-weight:700;color:#1d4ed8;margin-bottom:8px;">慢环 SEL · 离线可验证</div>
+      <div style="display:flex;flex-direction:column;gap:5px;">
+        <div style="background:#fff;border:1px solid #bfdbfe;border-radius:6px;padding:5px 8px;">轨迹 Trace + 反馈 + 记忆</div>
+        <div style="text-align:center;color:#1d4ed8;">▼</div>
+        <div style="background:#fff;border:1px solid #bfdbfe;border-radius:6px;padding:5px 8px;">经验编译器 → 提案 ΔS / Δθ</div>
+        <div style="text-align:center;color:#1d4ed8;">▼</div>
+        <div style="background:#fff;border:1px solid #bfdbfe;border-radius:6px;padding:5px 8px;">验证门 四级：格式→沙盒→回归→环境实测</div>
+        <div style="text-align:center;color:#1d4ed8;">▼</div>
+        <div style="background:#dbeafe;border-radius:6px;padding:5px 8px;font-size:13px;">结构库 StructureStore：通过则原子升版；拒绝则版本不动、记审计</div>
+      </div>
+      <div style="margin-top:8px;font-size:12.5px;color:#1d4ed8;">四权分立：提什么 ｜ 在不在边界 ｜ 能否安全应用 ｜ 应用否</div>
+    </div>
+  </div>
+
+  <!-- 状态条 -->
+  <div style="display:flex;flex-wrap:wrap;gap:8px;margin:14px 0 6px;">
+    <div style="flex:1 1 180px;border:1px solid #cbd5e1;border-radius:8px;padding:8px 10px;background:#fff;">
+      <div style="font-weight:700;">里程碑</div>
+      <div style="font-size:13px;margin-top:3px;">M0–3 ✅ 完成　·　M4 🔄 <b>3/6</b>　·　M5 ⛔ 未开始</div>
+    </div>
+    <div style="flex:1 1 150px;border:1px solid #cbd5e1;border-radius:8px;padding:8px 10px;background:#fff;">
+      <div style="font-weight:700;">模块</div>
+      <div style="font-size:13px;margin-top:3px;"><b>10/11</b> 已实现，唯一缺 Gene Manager</div>
+    </div>
+    <div style="flex:1 1 180px;border:1px solid #cbd5e1;border-radius:8px;padding:8px 10px;background:#fff;">
+      <div style="font-weight:700;">07 §18 完成标准</div>
+      <div style="font-size:13px;margin-top:3px;">满足 <b style="color:#15803d;">5</b> ｜ 部分 <b style="color:#b45309;">3</b>（6/7/11）｜ 未开始 <b style="color:#b91c1c;">4</b></div>
+    </div>
+    <div style="flex:1 1 180px;border:1px solid #cbd5e1;border-radius:8px;padding:8px 10px;background:#fff;">
+      <div style="font-weight:700;">测试</div>
+      <div style="font-size:13px;margin-top:3px;"><b>910 passed</b>, 1 skipped；15 个随机顺序 seed 一致</div>
+    </div>
+  </div>
+  <div style="font-size:12.5px;color:#b91c1c;margin-bottom:6px;">注意：910 测试证明的是工程质量，<b>不是架构有效性</b>。</div>
+
+  <!-- 七实验 -->
+  <div style="font-weight:700;font-size:15px;margin:10px 0 6px;">七条验收实验：5 已跑 / 2 缺 Gene Manager</div>
+  <div style="display:flex;flex-wrap:wrap;gap:7px;">
+    <div style="flex:1 1 150px;border:1px solid #bbf7d0;background:#f0fdf4;border-radius:8px;padding:7px 9px;"><b>1 非语言闭环 ✅</b><div style="font-size:12.5px;color:#475569;">68 帧连段 · 合法率 1.0 · 0 语言越界</div></div>
+    <div style="flex:1 1 160px;border:2px solid #f59e0b;background:#fffbeb;border-radius:8px;padding:7px 9px;"><b>2 记忆召回 ⚠ 尺太粗</b><div style="font-size:12.5px;color:#475569;">机制在转；动作 5/8 seed 不同，但 5 整数签名 7/8 相同</div></div>
+    <div style="flex:1 1 160px;border:2px solid #f59e0b;background:#fffbeb;border-radius:8px;padding:7px 9px;"><b>3 技能固化 ⚠ 尺量错</b><div style="font-size:12.5px;color:#475569;">固化 2 条，主环 33 次调用 0 成功；能耗 +0.00055</div></div>
+    <div style="flex:1 1 140px;border:1px dashed #b91c1c;background:#fef2f2;border-radius:8px;padding:7px 9px;"><b>4 基因保存恢复 ⛔</b><div style="font-size:12.5px;color:#475569;">缺 Gene Manager</div></div>
+    <div style="flex:1 1 140px;border:1px dashed #b91c1c;background:#fef2f2;border-radius:8px;padding:7px 9px;"><b>5 变异 ⛔</b><div style="font-size:12.5px;color:#475569;">缺 Gene Manager</div></div>
+    <div style="flex:1 1 150px;border:1px solid #bbf7d0;background:#f0fdf4;border-radius:8px;padding:7px 9px;"><b>6 安全自修改 ✅</b><div style="font-size:12.5px;color:#475569;">通过率 1.0，但自然驳回为 0</div></div>
+    <div style="flex:1 1 150px;border:1px solid #bbf7d0;background:#f0fdf4;border-radius:8px;padding:7px 9px;"><b>7 睡眠期编译 ✅</b><div style="font-size:12.5px;color:#475569;">睡眠 8/8 · 13 睡对 13 次调用</div></div>
+  </div>
+
+  <!-- 两把坏尺 -->
+  <div style="font-weight:700;font-size:15px;margin:14px 0 6px;">尺子坏了两处，坏法不同 —— 不能合并成一句「判据不行」</div>
+  <div style="display:flex;flex-wrap:wrap;gap:10px;">
+    <div style="flex:1 1 300px;border:2px solid #f59e0b;border-radius:10px;background:#fffbeb;padding:10px;">
+      <div style="font-weight:700;color:#b45309;">实验 2：尺「太粗」</div>
+      <div style="font-size:13px;margin-top:5px;">效应中位仅 ~1e-3，而判据是 5 个整数的阈值化投影 → 增益投不过分辨率。但逐帧细量证明扰动确实到了动作（5/8 seed、变化 seed 内 56–99% 帧不同，隐状态第 0 帧分叉）。</div>
+      <div style="font-size:13px;margin-top:6px;"><b>修法：</b>换高分辨率常驻判据 action_divergence，并量跨 seed 稳定性。</div>
+    </div>
+    <div style="flex:1 1 300px;border:2px solid #f59e0b;border-radius:10px;background:#fffbeb;padding:10px;">
+      <div style="font-weight:700;color:#b45309;">实验 3：尺「量错了东西」</div>
+      <div style="font-size:13px;margin-top:5px;">编译看窗口 Δ 的<b>积分</b>（从不看水平）；重放闸 1 看某帧<b>绝对水平 ≥ 冻结数</b>（从不看总量）——两者互不蕴含。冻结数取首帧动作后能量（技能自造峰值），技能出生后只在出生帧可用。</div>
+      <div style="font-size:13px;margin-top:6px;"><b>修法：</b>债务 26 —— min_energy 取动作前能量；预期闸 1 的红换成闸 3 的红，而非直接转正。</div>
+    </div>
+  </div>
+  <div style="display:flex;flex-wrap:wrap;gap:10px;margin-top:10px;">
+    <div style="flex:1 1 280px;border:1px solid #cbd5e1;border-radius:8px;background:#fff;padding:8px 10px;font-size:13px;"><b>第三种坏数字 · 饱和</b>：危险回避率两臂均 0.9814，但仅 336 个暴露帧、6 次接触——算对了却量不出东西，不能当证据。</div>
+    <div style="flex:1 1 280px;border:1px solid #cbd5e1;border-radius:8px;background:#fff;padding:8px 10px;font-size:13px;"><b>反向信号</b>：实验 6 通过率 100% ＝ 自然驳回 0，验证门后三级只有测试覆盖、无实验覆盖。</div>
+  </div>
+
+  <!-- 下一步 -->
+  <div style="margin-top:14px;border-left:4px solid #0f766e;background:#f0fdfa;border-radius:6px;padding:9px 11px;font-size:13.5px;">
+    <b>下一步按「能否产生证据」排序：</b>① 修债务 26 ＋ 给实验 2 换高分辨率判据，取第一组有效对照数字 → ② 再补 HeritableFilter / Gene Manager（解锁实验 4/5）、RuleCompiler → ③ DeathHook 接线与 v0.4 观察员接口。<b>补组件本身不产生任何有效性证据。</b>
+  </div>
+
+  <!-- 图例 -->
+  <div style="margin-top:12px;font-size:12px;color:#64748b;display:flex;flex-wrap:wrap;gap:12px;">
+    <span>■ 绿框＝快环</span><span>■ 蓝框＝慢环</span><span>■ 深灰＝注入面/快照</span>
+    <span>■ 琥珀实线＝判据问题</span><span>■ 红色虚线＝未实现/未跑</span>
+  </div>
+
+</div>
+</html>
+```
+
+**整合报告要点**（详见交付文件）：
+
+1. **研究故事**：智力被「大权重+长上下文」绑架 → 换组织原则为「生存」→ 三分离+双环+注入面+四权分立+基因包 → 机制能构造已证、架构有效未证。
+2. **可信边界**：权重当前不训练（参数侧 Δθ 整体推迟）、记忆/技能增益未测出、生命周期四件事全空；跨代记忆累积是永久设计而非延期。
+3. **可复用方法论**：机制≠能力；先看分母；量不出差先怀疑尺子；用变异测试反查守卫能否变红；工具失效先怀疑被测对象。
+4. **行动顺序**：先修判据取证（债务 26 + 高分辨率判据），再补组件，最后接线与 v0.4 扩展。
+
+如需我把第 17 篇登记进 `docs/README.md` 索引，或再转成一份飞书文档，告诉我即可。
