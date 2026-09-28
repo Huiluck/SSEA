@@ -1,0 +1,1309 @@
+FILE: 2025-11-11 From Experience to Strategy Empowering LLM Agents with Trainable Graph.pdf
+PAGES: 23
+
+===== PAGE 1 =====
+From Experience to Strategy: Empowering LLM Agents with Trainable Graph Memory
+FROMEXPERIENCE TOSTRATEGY: EMPOWERING
+LLM AGENTS WITHTRAINABLEGRAPHMEMORY
+Siyu Xia1,2∗, Zekun Xu3∗, Jiajun Chai3, Wentian Fan4, Yan Song5, Xiaohan Wang3
+Guojun Yin3 , Wei Lin3, Haifeng Zhang1,2†, Jun Wang5†
+1Institute of Automation, Chinese Academy of Sciences, Beijing, China
+2School of Artificial Intelligence, University of Chinese Academy of Sciences, China
+3Meituan 4Nanjing University of Posts and Telecommunications
+5AI Centre, Department of Computer Science, University College London, London, UK
+ABSTRACT
+Large Language Models (LLMs) based agents have demonstrated remarkable po-
+tential in autonomous task-solving across complex, open-ended environments. A
+promising approach for improving the reasoning capabilities of LLM agents is
+to better utilize prior experiences in guiding current decisions. However, LLMs
+acquire experience either through implicit memory via training, which suffers
+from catastrophic forgetting and limited interpretability, or explicit memory via
+prompting, which lacks adaptability. In this paper, we introduce a novelagent-
+centric, trainable, multi-layered graph memoryframework and evaluate how
+context memory enhances the ability of LLMs to utilize parametric information.
+The graph abstracts raw agent trajectories into structured decision paths in a state
+machine and further distills them into high-level, human-interpretable strategic
+meta-cognition. In order to make memory adaptable, we propose a reinforcement-
+based weight optimization procedure that estimates the empirical utility of each
+meta-cognition based on reward feedback from downstream tasks. These opti-
+mized strategies are then dynamically integrated into the LLM agent’s training
+loop through meta-cognitive prompting. Empirically, the learnable graph mem-
+ory delivers robust generalization, improves LLM agents’ strategic reasoning per-
+formance, and provides consistent benefits during Reinforcement Learning (RL)
+training.
+1 INTRODUCTION
+LLM-based agents are rapidly advancing the frontier of automated task execution, particularly in
+open-ended environments that demand long-horizon reasoning, strategic tool use, and adaptation
+from experience (Yao et al., 2022; Gao et al., 2023; Chai et al., 2025). While these agents demon-
+strate strong capabilities in decomposing and tackling complex tasks, their decision-making pro-
+cesses remain unstable, often resulting in inefficient action sequences, repeated mistakes, or even
+complete task failure (Singh et al., 2023). A central challenge lies in empowering agents not only
+to act, but to continuously learn and adapt by extracting insights from past successes and errors.
+Methods for enabling LLMs to better leverage prior experience can be broadly categorized into two
+paradigms. The first isimplicit memory, is typically formed through training procedures like RL,
+which denotes LLMs encode syntactic structures and semantic relations into parameter space (Li
+et al., 2025b; Bai et al., 2022). A more intuitive alternative isexplicit memoryvia contextual
+prompting, which improves performance by injecting guidance directly into the input without mod-
+ifying model weights. (Xu et al., 2025; Chhikara et al., 2025; Zhao et al., 2024).
+However, both paradigms suffer from fundamental yet contrasting limitations. Explicit memory
+facilitates transparency by making reasoning steps externally visible through prompts; however, it
+lacks adaptability and struggles to generalize beyond specific tasks or contexts. Conversely, implicit
+∗Equal contribution.
+†Corresponding author.Contact: haifeng.zhang@ia.ac.cn, jun.wang@cs.ucl.ac.uk
+1
+arXiv:2511.07800v1  [cs.CL]  11 Nov 2025
+
+===== PAGE 2 =====
+From Experience to Strategy: Empowering LLM Agents with Trainable Graph Memory
+Ours : Trainable Memory Graph
+Task 1
+Task n
+ExperiencePool
+ canonical paths on a finite state machine
+Learnable graph weight
+Meta-Cognition
+Meta a : ….. (score:0.574)
+Meta b : ….. (score:0.145)
+Meta c : ….. (score:0.235)
+……
+Top-kLLMInference
+LLMRL TrainingInsights
+Previous Method: EXPEL
+Insight guidance successfail
+Update           Edit
+Downvote          Add
+guidance
+Task m
+Query
+similarity
+Figure 1: Our method and existing approach Expel (Zhao et al., 2024).
+memory enables generalization via training, but its black-box nature makes the contribution of spe-
+cific past experiences inaccessible and difficult to interpret, while encoding knowledge directly into
+parameter space often incurs information loss and is vulnerable to catastrophic forgetting. This un-
+resolved challenge motivates our central research question:Can we develop an agentic framework
+by leveraging dynamic, structured explicit memory to actively guide and enhance implicit policy
+learning?
+This paper introduces a novelagent-centric, trainable, multi-layered graph memoryframework
+and explores its integration with RL. First, we abstract episodic agent trajectories into canonical
+paths over a finite state machine, from which we derive high-level, generalizablemeta-cognition.
+Second, we design a trainable graph architecture equipped with a reinforcement-driven weight opti-
+mization mechanism that calibrates the utility of stored strategies based on downstream task perfor-
+mance. Finally, the dynamic graph is operationalized as anexplicit policy prior, selectively injecting
+high-quality strategies into the agent’s context during training. Empirical results across seven di-
+verse question-answering benchmarks demonstrate that our framework delivers strong gains in both
+cross-task generalization and final task performance.
+Our main contributions are threefold:
+• We propose a novelagent-centric memory frameworkthat abstracts low-level agent tra-
+jectories into canonical paths on a finite state machine, enabling the distillation ofhigh-
+level, generalizable meta-cognitivestrategies.
+• We develop areinforcement-driven weight optimization mechanismthat dynamically
+calibrates the utility of memory connections, allowing the graph to selectively emphasize
+strategies with proven empirical effectiveness.
+• We demonstrate that incorporating this graph memory as an explicit policy prior within RL
+substantially enhances policy learning and final task performance.
+Ultimately, this work presents a unified framework for creating more adaptive, efficient, and
+strategically-aware agents that not only act, but learn and reason from a continually evolving repos-
+itory of their own experiences.
+2 RELATEDWORK
+2.1 LLM AGENTS ANDPLANNING WITHEXTERNALTOOLS
+LLM agents increasingly incorporate external tools to overcome reasoning limitations and expand
+their problem-solving capabilities. Early prompt-based approaches, including ReAct (Yao et al.,
+2022) and WebGPT (Nakano et al., 2021), demonstrate how agents can interleave reasoning and act-
+ing, embedding tool calls directly in the generation trace. Building on these foundations, Search-o1
+introduces agentic RAG that dynamically retrieves knowledge during reasoning. Building on these
+foundations, Search-o1 (Li et al., 2025a) advances tool-augmented reasoning by enabling agents
+to autonomously decide when to invoke search tools during multi-step problem solving. Recent
+research has proposed more sophisticated coordination mechanisms using RL-based training (Sun
+et al., 2025; Zheng et al., 2025; Song et al., 2025). Search-R1 (Jin et al., 2025) represents a break-
+through RL framework that trains LLMs for alternating reasoning and search, enabling autonomous
+query generation and real-time information retrieval during step-by-step reasoning. Other recent ap-
+proaches include optimized reward designs (Wang et al., 2025; Qian et al., 2025) and strategic tool
+2
+
+===== PAGE 3 =====
+From Experience to Strategy: Empowering LLM Agents with Trainable Graph Memory
+integration (Feng et al., 2025), with frameworks like RL-Factory (Chai et al., 2025) accelerating
+research in this domain.Despite these advances, the lack of explicit long-term memory for reusable
+tool-use patterns leaves deciding when and which tools to invoke as a key bottleneck. To address
+this limitation, we propose a differentiable graph-based memory system that encodes past decision
+paths into reusable strategic priors, enabling agents to systematically learn and generalize planning
+strategies across domains.
+2.2 MEMORYARCHITECTURES ANDSTRATEGICLEARNING
+Recent research has increasingly explored how to extract strategic knowledge and meta-cognition
+from agent experience. Reflexion (Zhang et al., 2023) equips agents with self-verbalized feedback
+to refine future behavior, while Expel (Zhao et al., 2024) identifies reusable reasoning trajectories
+to guide subsequent decisions. MEM1 (Zhou et al., 2025) and MemAgent (Yu et al., 2025) adapt
+memory usage over long-horizon tasks. A-MEM (Xu et al., 2025) builds dynamic memory notes
+that evolve with new inputs, Zep (Rasmussen et al., 2025)and HopRAG (Liu et al., 2025) construct
+logic-aware graphs to facilitate retrieval.
+However, these methods typically apply graph structure in a static manner and lack mechanisms to
+assess or refine the utility of memory components. G-Memory (Zhang et al., 2025) demonstrates
+how hierarchical graph-based memory can evolve by assimilating new collaborative trajectories,
+enabling systems to leverage cross-trial knowledge and learn from prior experiences progressively.
+Pan & Zhao (2025)focus on whether different forms of memory can enhance reasoning. Xiong et al.
+(2025) investigate long-term memory evolution.While prior memory methods often rely on static
+storage or task-specific designs, they lack mechanisms for evaluating and refining strategies. In
+contrast, we propose a trainable graph-based memory that supports utility-aware strategy selection
+and reinforcement learning–driven updates, enabling generalizable and adaptive decision-making.
+3 PRELIMINARIES
+3.1 HETEROGENEOUSGRAPHSTRUCTURE
+Graphs provide a natural formalism for modeling structured dependencies among diverse entities.
+A heterogeneous graph (Zhang et al., 2019)can be defined as
+G= (V,E,O V,RE,C),
+whereVdenotes the set of nodes,E⊆V×Vdenotes the set of directed edges,O V denotes the set
+of node types,R E denotes the set of relation types, andCis the collection of node contents. Each
+edgee= (u,v,r)∈Especifies a relation of typerfrom nodeuto nodev.
+Connectivity inGis represented by node-type adjacency matrices
+Axy∈{0,1} |Vx|×|Vy|,(x,y)∈O V×OV,
+whereV x andV y denote the sets of nodes of typexandy, respectively. An entry(A xy)ij = 1
+indicates that nodeiof typexis connected to nodejof typey. This formulation emphasizes the
+structural dependencies across different node types.
+To enable learning, eachAxy is coupled with a weight matrixW xy, so that propagation is governed
+by the weighted operatorAxy⊙Wxy. Thus, structure defines feasible paths, while weights determine
+effective information flow. Formally,
+Hy =σ
+ 
+(Axy⊙W xy)⊤Hx
+
+,
+whereHx are input values andσ(·)denotes an activation function.
+3.2 LLM AGENTS WITHTOOL-AUGMENTEDREASONING
+The interaction between a LLM and external tools can be formalized as a structured multi-turn
+decision process (Chai et al., 2025). At each time stept, the agent observes
+st = (q,h 1:t−1), a t∼π θ(at|s t).
+3
+
+===== PAGE 4 =====
+From Experience to Strategy: Empowering LLM Agents with Trainable Graph Memory
+whereqis the user query andh 1:t−1 is the dialogue or reasoning history, then generates an action
+awhich may correspond to internal reasoning, a tool invocation, or answer generation, using a
+protocol with tags such as<think>,<tool call>, and<answer>.
+The process continues until either the tag<answer></answer>is generated or the agent has
+issued up to a maximum ofKtool invocations. A trajectoryτ= (s 1,a 1,o 1,...,s T,aT,oT )yields
+rewardR(τ), whereo t denotes the environment observation, i.e., tool outputs ifa t is a tool call,
+and the policy is optimized via
+J(θ) =E τ∼πθ[R(τ)],∇ θJ(θ)≈E τ
+h TX
+t=1
+∇θ logπθ(at|s t) ˆAt
+i
+.
+4 METHOD
+In this section, we detail our proposed method in three stages. First, we describe how to construct
+a memory graph that encodes decision trajectories and strategic principles. Second, we present
+the learning framework for optimizing the weights within this memory graph. Finally, we explain
+how this structured memory is integrated into the RL training process to guide agent behavior and
+improve learning efficiency.The overall process of our method is shown in the Figure 2.
+4.1 STAGE1: HIERARCHICALMEMORYGRAPHCONSTRUCTION
+Memory Graph Structure.We instantiate the memory as a heterogeneous graph with node set
+V=Q∪T ∪Mand directed edgesE⊆(Q×T)∪(T ×M). Each node type forms a distinct
+layer in the hierarchy, consistent with the structural depiction in figure 2 (stage 1):
+•Query Layer(Q): Formed by query nodesq i, each representing a task instance (e.g., a
+user query), including input, execution trajectory, and outcome labels. Since a single query
+may yield multiple responses, eachq i can connect to one or more transition paths{t j}via
+edges(qi→tj).
+•Transition Path Layer(T): Formed by path nodest j, each denoting a canonical decision
+pathway derived from a finite state machineSthat abstracts raw execution traces into stan-
+dardized behavioral patterns. These nodes are linked to the meta-cognition layer through
+edges(tj→mk).
+•Meta-Cognition Layer(M): Formed by meta-cognition nodesm k, each encoding a high-
+level strategic principle distilled from both successful and failed paths, serving as general-
+ized heuristics for problem-solving.
+Connectivity is encoded by bipartite adjacency matrices
+Aq→t∈{0,1} |Q|×|T|, A t→m∈{0,1} |T|×|M|,
+augmented with learnable weightsw qt andw tm respectively. Information flows as a weighted ag-
+gregation process from queries to meta-cognition, forming a directed acyclic topology.
+Finite State Machine.To obtain a standardized and comparable representation of agent behaviors
+across tasks, we define a Finite State Machine (FSM)S= (S,A,T). Here,Sdenotes abstract
+cognitive states (e.g.,StrategyPlanning,InformationAnalysis),Ais the action space,
+andT:S×A→Sis the transition function. Each raw execution trajectory comprising tool
+invocations or reasoning steps is mapped onto a canonical patht j within this FSM. This grounding
+enables structured comparison across queries while filtering execution-level noise, ensuring that the
+memory graph preserves only semantically meaningful decision points. The detailed specification
+ofSis provided in the Appendix B.1.
+Meta-Cognition Induction.Meta-cognitions are induced by analyzing the canonical decision
+pathways. For each queryq i, the agent samples trajectories{τ (i)
+1 ,...,τ (i)
+N}from its policyπ. If
+both successful (τs) and failed (τ f ) trajectories exist, contrasting their FSM paths yields a high-
+confidence meta-cognitionm k that explains the outcome divergence. If only failures occur, the
+4
+
+===== PAGE 5 =====
+From Experience to Strategy: Empowering LLM Agents with Trainable Graph Memory
+Stage 1:Agent-based Memory Graph Construct
+level 2: State-Machine Path
+success path : ”Start ->... -> DecisionMaking -> SufficientInformation -> AnswerGeneration -> Success "
+fail path : "Start -> KnowledgeSufficient -> AnswerGeneration -> WrongAnswer "
+Meta-cognition: When 'InternalConflict' arises, it appears more robust to decisively prioritize the externally verified information over potentially flawed
+internal memory before proceeding.
+level 1: LLM ResponseTrajectories
+To which film category are both Call
+Me Kuchu and That's Dancing! belong?
+query
+level 3:  Update / add / skip meta-cognition
+start
+Answer
+Generation
+Tool
+execution
+Information
+Analysis
+Refine
+Correct
+answer
+Wrong
+answer
+Tool Error
+Planning
+Qa Qb Qc
+result : Correct!
+<think>\nOkay, I need to figure out
+which film category both .....</think>
+<tool_call>\n{\"name\": \"search\",
+\"arguments\": {\"query\": \"Call Me
+Kuchu\"}}\n</tool_call>
+<answer>documentary film</answer>
+Qd
+Stage 2: Memory Graph Weight Training
+Withmeta-cognition
+You are guided by a set of general metacognitive strategies. General Metacognitive Strategies:……
+Do both MODE and Women's Health focus on the issues faced by women?
+query
+<answer>Yes</answer>  Correct answer
+Withoutmeta-cognition
+Do both MODE and Women's Health focus on the issues faced by women?
+query
+<answer>No</answer>  Wrong answer
+Reward(Δ𝑅!)=R_with	–	R_w/o
+ ℒℛℒ=−𝐸"!∼$[Δ𝑅!⋅log𝑝𝑚! 𝑞new
+sample
+new query
+similarity
+Learnable weight
+Stage 3:Memory-Guided Reinforcement Learning
+RLdataprocessing
+Raw data
+Query1：
+Meta1:xxx
+Meta2:xxx
+Meta3:xxxTop-k
+New_prompt
+Update Policy
+(MultiturnRL) 0
+0.2
+0.4
+0.6
+M1M2M3M4M5…
+Graphmemory cognition probability
+Figure 2: The framework of the proposed trainable memory. Stage 1 builds a graph from LLM trajectories,
+encoding queries, decision paths, and meta-cognition. Stage 2 estimates strategy utility via counterfactual
+rewards and updates graph weights. Stage 3 injects top-k strategies into RL training for policy optimization.
+agent retrieves top-Ksemantically similar queries Sim(qi,qj) = cos(eqi,eqj), and derives specula-
+tive meta-cognitions from successful paths of these neighbors:
+Mspec(qi) =
+[
+qj∈TopK(qi)
+{mk|t j∈SuccessPaths(q j), mk∈M(t j)}.
+Concrete examples and the corresponding prompts are provided in Appendix E.3.
+Meta-Cognition Update.The memory graph is dynamically updated to preserve relevance and
+utility. When a new decision path is generated, the agent evaluates its strategic value: reinforcing
+existing principles updates their confidence, novel patterns lead to new meta-cognition nodes, and
+redundant or low-confidence paths are discarded. This selective process curates a concise set of
+strategic principles that evolves with experience.
+The hierarchical structure thus abstracts low-level trajectories into reusable strategies. At inference,
+the memory graphGfunctions as a structured policy prior guiding decision-making, while during
+training it provides supervision signals for reward-driven consolidation of meta-cognitive knowl-
+edge.
+5
+
+===== PAGE 6 =====
+From Experience to Strategy: Empowering LLM Agents with Trainable Graph Memory
+4.2 STAGE2: TRAINABLEGRAPHWEIGHTOPTIMIZATION
+The memory graph provides structural priors, but not all meta-cognitions contribute equally. To
+adaptively capture their utility, we introduce a reinforcement-driven weight optimization procedure.
+Parameterizing the Graph for Utility Learning.We parameterize the memory graphGas a
+sparsely connected weighted network, where each edge is associated with a trainable coefficient re-
+flecting its utility. Given query featuresH(0)
+Q , information propagates through the graph via weighted
+aggregation:
+H(1)
+T =σ
+
+(Aqt⊙Wqt)⊤H(0)
+Q
+
+,H (2)
+M =σ
+
+(Atm⊙Wtm)⊤H(1)
+T
+
+,
+which corresponds to the flow from thequery layer, through the transition layer, and finally to the
+meta-cognition layerin Figure 2.
+In our formulation, a new query is represented by its similarity to historical queries in the graph,
+and the top-kmost relevant neighbors are selected to activate a task-specific subgraphG(q new) =
+(Q′,T ′,M′).Within this subgraph, a candidate meta-cognitionm k∈M′ is sampled according to
+a relevance scoreρ(mk), derived from the learned graph weights.
+To estimate its empirical utility, we contrast two trajectories: one guided bymk, which yields reward
+Rwith(mk), and another without such guidance, yielding rewardR w/o. The resultingreward gap
+∆Rk =R with(mk)−R w/o is employed as a utility signal, quantifying the marginal contribution of
+mk to overall task performance.
+Policy Gradient-Based Weight Optimization.The relevance scoreρ(m k|q new)is computed by
+aggregating path strengths from historical queries and transitions leading tomk:
+ρ(mk|q new) =
+X
+qi,tj :qi→tj→mk
+Sim(qnew,qi)·w (i,j)
+qt ·w (j,k)
+tm .
+Using a softmax over these scores, the selection probabilityp(mk|q new)∝exp(ρ(m k|q new)).
+We apply the REINFORCE algorithm to optimize the weights:
+LRL =−E mk∼p [∆Rk·logp(m k|q new)].
+A positive∆Rk increases the relevance score and strengthens the supporting paths, while a negative
+∆Rk decreases them, enabling the memory graph to refine itself over time.
+4.3 STAGE3: MEMORY-GUIDEDPOLICYOPTIMIZATION
+Departing from prior works that leverage memory solely during inference, our framework explicitly
+integrates the structured memory into thetraining loop. Meta-cognitive strategies are dynamically
+retrieved from the optimized memory graph and incorporated into the agent’s context, serving as
+high-level strategic priors that guide the reinforcement learning process.
+Strategic Context Retrieval.For each training instanceq train, we compute a relevance score for
+every meta-cognition nodem∈M. This score is derived from the aggregated weights of all paths
+connecting the corresponding query node to the meta-cognition node within the memory graphG
+(as formulated in Section 4.2). We then select the top-kmeta-cognitions{m 1,...,m k}with the
+highest scores. This mechanism ensures that the guidance is not only relevant but also grounded in
+empirically successful past trajectories, as encoded by the learned edge weights.
+The retrieved strategies are verbalized and prepended to the original query to form an augmented
+prompt,˜qtrain =
+
+m1,m 2,...,m k ;q train
+
+, this augmented prompt serves as the input to the policy
+network.
+Optimization Objective.The agent’s policy,π θ, is optimized to maximize the expected cumula-
+tive reward conditioned on the augmented context. We employ a policy gradient method, where the
+parametersθare updated by minimizing the following loss function:
+LRL+Mem =−E a∼πθ(·|˜qtrain)
+
+R(a)
+
+.
+6
+
+===== PAGE 7 =====
+From Experience to Strategy: Empowering LLM Agents with Trainable Graph Memory
+Table 1: Performance comparison across seven QA datasets in inference.† indicates in-domain datasets, while
+⋆ denotes out-of-domain datasets. Percentages in Avg. column denote relative improvement over ITR.
+Methods Avg. (↑/↓vs. ITR) General QA Multi-Hop QA
+NQ⋆ TriviaQA⋆ PopQA⋆ HotpotQA† 2wiki⋆ Musique⋆ Bamboogle⋆
+Qwen3-8B
+ITR 0.334 (–) 0.275 0.593 0.358 0.325 0.324 0.094 0.365
+Direct Inference 0.269 (↓19.5%) 0.200 0.519 0.191 0.230 0.275 0.0580.410
+CoT 0.252 (↓24.6%) 0.209 0.512 0.182 0.223 0.271 0.055 0.308
+Direct Trajectory 0.352 (↑5.4%) 0.3170.604 0.380 0.3290.3630.105 0.364
+A-MEM 0.334 (0.0%) 0.286 0.590 0.366 0.339 0.332 0.112 0.313
+EXPEL 0.329 (↓1.5%) 0.306 0.594 0.379 0.317 0.327 0.092 0.287
+Ours 0.365(↑9.3%)0.316 0.622 0.382 0.3580.354 0.1280.392
+Qwen3-4B
+ITR 0.279 (–) 0.298 0.581 0.157 0.268 0.281 0.077 0.290
+Direct Inference 0.211 (↓24.4%) 0.158 0.413 0.157 0.183 0.240 0.033 0.290
+CoT 0.181 (↓35.1%) 0.149 0.375 0.146 0.156 0.190 0.022 0.228
+Direct Trajectory 0.325 (↑16.5%) 0.310 0.558 0.379 0.282 0.344 0.076 0.327
+A-MEM 0.319 (↑14.3%) 0.310 0.586 0.381 0.272 0.269 0.091 0.325
+EXPEL 0.321 (↑15.1%) 0.312 0.570 0.388 0.294 0.3470.075 0.263
+Ours 0.351 (↑25.8%) 0.335 0.596 0.393 0.299 0.347 0.099 0.391
+This tight integration ensures that the policy does not learn in isolation but is continually guided by
+a dynamically evolving corpus of strategic knowledge. This allows the agent to effectively bootstrap
+its learning process from a distilled representation of past successes.
+In practice, we adopt the Generalized Reinforcement Policy Optimization (GRPO) algorithm to
+optimize the memory-augmented policy. The GRPO loss can be written as:
+LGRPO =−E t
+
+min
+ πθ(at|˜qtrain)
+πθold(at|˜qtrain)
+ˆAt,clip
+ πθ(at|˜qtrain)
+πθold(at|˜qtrain),1−ϵ,1 +ϵ
+
+ˆAt
+
+,
+where ˆAt is the advantage estimator andϵthe clipping parameter.
+5 EXPERIMENT
+5.1 DATASETS
+To evaluate the effectiveness and generalizability of our approach, we conduct experiments on seven
+widely-used Question-Answering(QA) datasets, covering both single-turn and multi-hop reasoning
+tasks.(1) General QA Datasets: We include Natural Questions (Kwiatkowski et al., 2019), Triv-
+iaQA (Joshi et al., 2017), and PopQA (Mallen et al., 2022), which consist of open-domain factoid
+questions requiring retrieval and basic reasoning capabilities.(2) Multi-hop QA Datasets: For more
+complex reasoning scenarios, we adopt HotpotQA (Yang et al., 2018), 2WikiMultiHopQA (Ho et al.,
+2020), Musique (Trivedi et al., 2022), and Bamboogle (Press et al., 2022), which require integrating
+information across multiple documents.
+5.2 BASELINEEVALUATION
+To comprehensively evaluate the effectiveness of our proposed method, we design experiments from
+two complementary perspectives:(1) Direct Inference Impact:We assess how the integration of
+our memory workflow influences model performance in zero-training settings, i.e., during direct
+inference.(2) Training Impact:We investigate how the memory architecture affects RL training
+dynamics, focusing on convergence speed and the final performance achieved. Detailed baseline
+configurations are provided in Appendix A.2.
+5.3 MAIN RESULTS
+Experimental Analysis: Memory-Guided Inference. The detailed inference results are summa-
+rized in Table 1. On the 8B-scale model, our method demonstrates strong competitiveness, achiev-
+7
+
+===== PAGE 8 =====
+From Experience to Strategy: Empowering LLM Agents with Trainable Graph Memory
+ing an average score of 0.365, which represents a notable+9.3%relative improvement over the
+ITR baseline and ranks first among all contenders. The advantages of our method become even
+more dramatic on the smaller Qwen3-4B model. It achieves a staggering+25.8%relative improve-
+ment in average performance over the ITR baseline, this significant performance improvement on a
+model with limited capacity suggests that our method effectively addresses its inherent deficiencies
+by providing a robust and structured reasoning framework.
+A particularly noteworthy finding is that the memory component of our method was constructed
+exclusively using data from HotpotQA, the single in-domain dataset. Despite this, our method
+not only excels on HotpotQA but also achieves state-of-the-art or highly competitive performance
+across all out-of-domain datasets, including NQ, TriviaQA, PopQA, and 2wiki. This outcome is a
+strong testament to the remarkable generalization capability of our approach. It demonstrates that
+the reasoning structures learned from HotpotQA are not merely overfitted patterns.
+Table 2: Performance comparison across seven QA datasets in training. Avg. column also reports relative
+improvement (%) compared to Search-R1 as the base. † indicates in-domain datasets, while ⋆ denotes out-of-
+domain datasets.
+Methods Avg. (↑/↓vs. Search-R1) General QA Multi-Hop QA
+NQ⋆ TriviaQA⋆ PopQA⋆ HotpotQA† 2wiki⋆ Musique⋆ Bamboogle⋆
+Qwen3-8B
+Search-R1 0.395 (–) 0.384 0.651 0.429 0.3910.386 0.143 0.380
+Direct Trajectory 0.400 (↑1.27%) 0.4060.657 0.433 0.376 0.367 0.139 0.423
+A-MEM 0.403(↑2.03%) 0.398 0.6560.436 0.389 0.4090.138 0.398
+EXPEL 0.371 (↓6.08%) 0.362 0.621 0.407 0.354 0.375 0.121 0.357
+Ours 0.408 (↑3.29%) 0.3860.6620.434 0.387 0.403 0.152 0.435
+Qwen3-4B
+Search-R1 0.375 (–) 0.357 0.625 0.426 0.354 0.402 0.115 0.348
+Direct Trajectory 0.415 (↑10.67%) 0.403 0.624 0.434 0.420 0.4280.186 0.412
+A-MEM 0.388 (↑3.47%) 0.393 0.603 0.439 0.385 0.322 0.157 0.418
+EXPEL 0.337 (↓10.13%) 0.322 0.577 0.399 0.311 0.363 0.081 0.305
+Ours 0.426 (↑13.60%) 0.408 0.646 0.462 0.410 0.407 0.189 0.463
+Experimental Analysis: Memory-Guided Reinforcement Learning. We further evaluated our
+method by integrating it into RL training process. The detailed training results are in Table 2.
+On theQwen3-8Bmodel, our method achieves the best average performance (0.408), improving
+uponSearch-R1baseline by3.29%. This shows that our method provides additional benefits
+even after the model is already optimized with RL. The gains are most notable on challenging out-
+of-domain datasets likeTriviaQAandBamboogle, suggesting our memory helps the RL agent
+learn more general reasoning strategies that transfer well to new tasks.
+（a） （b）
+Figure 3: (a) Training curve of 4B models.
+(b) Training curve of 8B models.
+On the smallerQwen3-4Bmodel, the results
+are even more impressive. Our method achieves
+a remarkable13.60%relative improvement
+overSearch-R1. As seen in our inference
+experiments, the benefit of our method is espe-
+cially pronounced on smaller models. Remark-
+ably, our trainedQwen3-4Bmodel (0.426)
+outperforms the baselineQwen3-8Bmodel
+(0.395), demonstrating a significant gain in ef-
+ficiency.
+In summary, adding our method to inference or
+RL training framework significantly boosts QA performance, especially for smaller models. Our
+structured memory helps the model learn general reasoning skills from the in-domainHotpotQA
+data and apply them successfully to other datasets. This allows smaller models to match or even
+exceed the performance of larger ones, offering a path to more efficient and capable models.
+8
+
+===== PAGE 9 =====
+From Experience to Strategy: Empowering LLM Agents with Trainable Graph Memory
+5.4 ABLATIONSTUDIES
+We conduct ablation studies across three dimensions: (1) disabling memory weight updates (2)
+varying the number of meta-cognitions used as context and (3) altering the granularity of memory
+composition (i.e., API call structure).
+0.29
+0.359
+0.391
+IT R no -weight we ight
+Bamboogle
+0.077
+0.09
+0.099
+IT R no -weight we ight
+Musique
+(a) (b)
+0.279
+0.351 0.357
+base gpt-4o gemini-2.5
+(c)
+Top_k
+(d)
+LLMbackends
+0.279
+0.344 0.351 0.355
+0 1 3 5
+Figure 4:Ablation studies of the structured memory framework.(a) and (b) show the effect of disabling
+weight optimization. (c) varying the number of meta-cognitionk. (d) generalization across LLM backends.
+Effect of Disabling Weight Optimization.We first examine the impact of freezing the memory
+graph weights (i.e., no learning of edge confidence). In this setup, we keep all memory edges at uni-
+form weight and retrieve strategies purely based on structural presence. As shown in figure 4(a)(b),
+performance drops significantly, particularly on2WikiMultiHopQA, indicating that learning to
+prioritize high-utility memory connections is crucial for effective strategy reuse. This validates our
+reinforcement-based update mechanism, which helps distinguish broadly useful meta-cognitions
+from less effective or overly specific ones.
+Varying the Number of Meta-Cognitions.We further evaluate how the number of retrieved meta-
+cognitive strategies (k) affects model performance. Figure 4(c) presents the average accuracy of
+the 4B model on seven benchmarks as a function of the number of meta-cognitions. Increasingk
+from 0 (no memory) to 3 leads to steady improvement, as more strategic signals are injected into
+the prompt. However, further increasingkyields diminishing returns and can even introduce noise
+due to overlapping or irrelevant strategies. This highlights a trade-off between strategy diversity and
+clarity, and suggests that a moderate value ofk= 3offers the best balance between guidance and
+prompt efficiency. The detailed results are shown in Table 3.
+Generalization across LLMs backends.To evaluate whether our memory construction is tied to
+a specific LLM API, we replace the originalOpenAI gpt-4omodel withGemini-2.5-pro
+and rerun the downstream evaluation using the same memory graph. As shown in Table 4, our
+memory-augmented approach consistently outperforms its non-memory counterpart even under a
+different LLM backend, though the absolute numbers differ slightly due to model capability gaps.
+This demonstrates that our structured memory graph and retrieval-guided prompting strategy are
+largelymodel-agnostic, enabling plug-and-play use across modern foundation models.
+6 CONCLUSION
+In this paper, we address the dual challenges of inefficient decision-making and poor experience
+reuse in LLM-based agents. We introduce a trainable, multi-level graph memory framework that
+structurally encodes historical queries, policy trajectories, and high-level metacognitive strategies.
+This design facilitates explicit strategy recall and integrates memory into the RL loop to guide and
+accelerate policy optimization.
+Unlike prior works that rely on either implicit optimization or static prompting, our approach unifies
+explicit memory with dynamic learning. By updating memory weights via RL signals, the frame-
+work selectively reinforces high-utility strategies and re-injects them into the agent’s training process
+through prompt augmentation. This mechanism promotes strategic transfer and generalization from
+past experiences. Our experiments demonstrate that this method not only improves reasoning ac-
+curacy at inference time but also accelerates convergence during RL training, ultimately yielding
+superior final performance and strong generalization across diverse tasks.
+9
+
+===== PAGE 10 =====
+From Experience to Strategy: Empowering LLM Agents with Trainable Graph Memory
+REFERENCES
+Yuntao Bai, Andy Jones, Kamal Ndousse, Amanda Askell, Anna Chen, Nova DasSarma, Dawn
+Drain, Stanislav Fort, Deep Ganguli, Tom Henighan, Nicholas Joseph, Saurav Kadavath, Jackson
+Kernion, Tom Conerly, Sheer El-Showk, Nelson Elhage, Zac Hatfield-Dodds, Danny Hernan-
+dez, Tristan Hume, Scott Johnston, Shauna Kravec, Liane Lovitt, Neel Nanda, Catherine Olsson,
+Dario Amodei, Tom Brown, Jack Clark, Sam McCandlish, Chris Olah, Ben Mann, and Jared Ka-
+plan. Training a helpful and harmless assistant with reinforcement learning from human feedback,
+2022. URLhttps://arxiv.org/abs/2204.05862.
+Jiajun Chai, Guojun Yin, Zekun Xu, Chuhuai Yue, Yi Jia, Siyu Xia, Xiaohan Wang, Jiwen Jiang,
+Xiaoguang Li, Chengqi Dong, Hang He, and Wei Lin. Rlfactory: A plug-and-play reinforcement
+learning post-training framework for llm multi-turn tool-use, 2025. URLhttps://arxiv.
+org/abs/2509.06980.
+Prateek Chhikara, Dev Khant, Saket Aryan, Taranjeet Singh, and Deshraj Yadav. Mem0: Building
+production-ready ai agents with scalable long-term memory, 2025. URLhttps://arxiv.
+org/abs/2504.19413.
+Jiazhan Feng, Shijue Huang, Xingwei Qu, Ge Zhang, Yujia Qin, Baoquan Zhong, Chengquan Jiang,
+Jinxin Chi, and Wanjun Zhong. Retool: Reinforcement learning for strategic tool use in llms,
+2025. URLhttps://arxiv.org/abs/2504.11536.
+Leo Gao, Angela Beese, Max Fischer, Lariah Hou, Julia Kreutzer, Xi Victoria Lin, Jason Phang
+Wang, Luke Zettlemoyer, and Emiel van Miltenburg. Toolformer: Language models can teach
+themselves to use tools.arXiv preprint arXiv:2302.04761, 2023.
+Chia-Hsuan Ho, Shu-Hung Yeh, and Yun-Nung Chen. Constructing a multi-hop qa dataset via
+graph-based node ranking. InProceedings of the 2020 Conference on Empirical Methods in
+Natural Language Processing (EMNLP), pp. 6151–6161, 2020.
+Bowen Jin, Hansi Zeng, Zhenrui Yue, Jinsung Yoon, Sercan Arik, Dong Wang, Hamed Zamani, and
+Jiawei Han. Search-r1: Training llms to reason and leverage search engines with reinforcement
+learning, 2025. URLhttps://arxiv.org/abs/2503.09516.
+Mandar Joshi, Eunsol Choi, Daniel Weld, and Luke Zettlemoyer. Triviaqa: A large scale distantly
+supervised challenge dataset for reading comprehension.arXiv preprint arXiv:1705.03551, 2017.
+Vladimir Karpukhin, Barlas O ˘guz, Sewon Min, Patrick Lewis, Ledell Wu, Sergey Edunov, Danqi
+Chen, and Wen tau Yih. Dense passage retrieval for open-domain question answering, 2020. URL
+https://arxiv.org/abs/2004.04906.
+Tom Kwiatkowski, Jennimaria Palomaki, Olivia Redfield, Michael Collins, Ankur P Parikh, Chris
+Alberti, Danielle Epstein, Illia Polosukhin, Jacob Devlin, Kenton Lee, et al. Natural questions: a
+benchmark for question answering research.Transactions of the Association for Computational
+Linguistics, 2019.
+Xiaoxi Li, Guanting Dong, Jiajie Jin, Yuyao Zhang, Yujia Zhou, Yutao Zhu, Peitian Zhang, and
+Zhicheng Dou. Search-o1: Agentic search-enhanced large reasoning models, 2025a. URL
+https://arxiv.org/abs/2501.05366.
+Zhiyu Li, Shichao Song, Chenyang Xi, Hanyu Wang, Chen Tang, Simin Niu, Ding Chen, Jiawei
+Yang, Chunyu Li, Qingchen Yu, Jihao Zhao, Yezhaohui Wang, Peng Liu, Zehao Lin, Pengyuan
+Wang, Jiahao Huo, Tianyi Chen, Kai Chen, Kehang Li, Zhen Tao, Huayi Lai, Hao Wu, Bo Tang,
+Zhenren Wang, Zhaoxin Fan, Ningyu Zhang, Linfeng Zhang, Junchi Yan, Mingchuan Yang, Tong
+Xu, Wei Xu, Huajun Chen, Haofen Wang, Hongkang Yang, Wentao Zhang, Zhi-Qin John Xu,
+Siheng Chen, and Feiyu Xiong. Memos: A memory os for ai system, 2025b. URLhttps:
+//arxiv.org/abs/2507.03724.
+Hao Liu, Zhengren Wang, Xi Chen, Zhiyu Li, Feiyu Xiong, Qinhan Yu, and Wentao Zhang. Hoprag:
+Multi-hop reasoning for logic-aware retrieval-augmented generation, 2025. URLhttps://
+arxiv.org/abs/2502.12442.
+10
+
+===== PAGE 11 =====
+From Experience to Strategy: Empowering LLM Agents with Trainable Graph Memory
+Eugene Mallen, Patrick Lewis, Semih Yavuz, Raymond Ng, Sebastian Riedel, Dhruvesh Sridhar, and
+Fabio Petroni. Popqa: Open-domain qa with popular questions. InFindings of the Association
+for Computational Linguistics: EMNLP 2022, 2022.
+Reiichiro Nakano, Jacob Hilton, Suchir Balaji, and et al. Webgpt: Browser-assisted question an-
+swering with human feedback.arXiv preprint arXiv:2112.09332, 2021.
+Bo Pan and Liang Zhao. Can past experience accelerate llm reasoning?, 2025. URLhttps:
+//arxiv.org/abs/2505.20643.
+Ofir Press, Daniel Khashabi, Ashish Sabharwal, and Tushar Khot. Measuring and narrowing the
+compositionality gap in language models. InProceedings of the 2022 Conference on Empirical
+Methods in Natural Language Processing, 2022.
+Cheng Qian, Emre Can Acikgoz, Qi He, Hongru Wang, Xiusi Chen, Dilek Hakkani-T ¨ur, Gokhan
+Tur, and Heng Ji. Toolrl: Reward is all tool learning needs, 2025. URLhttps://arxiv.
+org/abs/2504.13958.
+Preston Rasmussen, Pavlo Paliychuk, Travis Beauvais, Jack Ryan, and Daniel Chalef. Zep: A
+temporal knowledge graph architecture for agent memory, 2025. URLhttps://arxiv.org/
+abs/2501.13956.
+Arjun Singh, Zhe Xiang, Dongheon Kim, Michael Ahn, Jesse Thomason, and Julie Shah. Prog-
+prompt: Generating situated robot task plans using large language models.arXiv preprint
+arXiv:2305.15343, 2023.
+Huatong Song, Jinhao Jiang, Yingqian Min, Jie Chen, Zhipeng Chen, Wayne Xin Zhao, Lei Fang,
+and Ji-Rong Wen. R1-searcher: Incentivizing the search capability in llms via reinforcement
+learning, 2025. URLhttps://arxiv.org/abs/2503.05592.
+Hao Sun, Zile Qiao, Jiayan Guo, Xuanbo Fan, Yingyan Hou, Yong Jiang, Pengjun Xie, Yan Zhang,
+Fei Huang, and Jingren Zhou. Zerosearch: Incentivize the search capability of llms without
+searching, 2025. URLhttps://arxiv.org/abs/2505.04588.
+Harsh Trivedi, Daniel Khashabi, Tushar Khot, Ashish Sabharwal, and Dan Roth. Musique: Multihop
+questions via single-hop question composition. InProceedings of the 2022 Conference of the
+North American Chapter of the Association for Computational Linguistics, 2022.
+Hongru Wang, Cheng Qian, Wanjun Zhong, Xiusi Chen, Jiahao Qiu, Shijue Huang, Bowen Jin,
+Mengdi Wang, Kam-Fai Wong, and Heng Ji. Acting less is reasoning more! teaching model to
+act efficiently, 2025. URLhttps://arxiv.org/abs/2504.14870.
+Liang Wang, Nan Yang, Xiaolong Huang, Binxing Jiao, Linjun Yang, Daxin Jiang, Rangan Ma-
+jumder, and Furu Wei. Text embeddings by weakly-supervised contrastive pre-training, 2024.
+URLhttps://arxiv.org/abs/2212.03533.
+Jason Wei, Xuezhi Wang, Dale Schuurmans, Maarten Bosma, Fei Xia, Ed Chi, Quoc V Le, Denny
+Zhou, et al. Chain-of-thought prompting elicits reasoning in large language models.Advances in
+neural information processing systems, 35:24824–24837, 2022.
+Zidi Xiong, Yuping Lin, Wenya Xie, Pengfei He, Jiliang Tang, Himabindu Lakkaraju, and Zhen Xi-
+ang. How memory management impacts llm agents: An empirical study of experience-following
+behavior, 2025. URLhttps://arxiv.org/abs/2505.16067.
+Wujiang Xu, Kai Mei, Hang Gao, Juntao Tan, Zujie Liang, and Yongfeng Zhang. A-mem: Agentic
+memory for llm agents, 2025. URLhttps://arxiv.org/abs/2502.12110.
+Zhilin Yang, Peng Qi, Saizheng Zhang, Yoshua Bengio, William W Cohen, Ruslan Salakhutdinov,
+and Christopher D Manning. Hotpotqa: A dataset for diverse, explainable multi-hop question
+answering. InProceedings of the 2018 Conference on Empirical Methods in Natural Language
+Processing, pp. 2369–2380, 2018.
+11
+
+===== PAGE 12 =====
+From Experience to Strategy: Empowering LLM Agents with Trainable Graph Memory
+Shinn Yao, Jeffrey Zhao, Dian Yu, Hyung Won Chung, Jaybos Chen, Karthik Narasimhan, and et al.
+React: Synergizing reasoning and acting in language models.arXiv preprint arXiv:2210.03629,
+2022.
+Hongli Yu, Tinghong Chen, Jiangtao Feng, Jiangjie Chen, Weinan Dai, Qiying Yu, Ya-Qin Zhang,
+Wei-Ying Ma, Jingjing Liu, Mingxuan Wang, and Hao Zhou. Memagent: Reshaping long-context
+llm with multi-conv rl-based memory agent, 2025. URLhttps://arxiv.org/abs/2507.
+02259.
+Chuxu Zhang, Dongjin Song, Chao Huang, Ananthram Swami, and Nitesh V Chawla. Heteroge-
+neous graph neural network. InProceedings of the 25th ACM SIGKDD international conference
+on knowledge discovery & data mining, pp. 793–803, 2019.
+Guibin Zhang, Muxin Fu, Guancheng Wan, Miao Yu, Kun Wang, and Shuicheng Yan. G-memory:
+Tracing hierarchical memory for multi-agent systems, 2025. URLhttps://arxiv.org/
+abs/2506.07398.
+Shinn Zhang, Eric Wu, Frank Xu, Stuart Russell, and Dragomir Radev. Reflexion: Language agents
+with verbal reinforcement learning.arXiv preprint arXiv:2303.11366, 2023.
+Andrew Zhao, Daniel Huang, Quentin Xu, Matthieu Lin, Yong-Jin Liu, and Gao Huang. Expel: Llm
+agents are experiential learners, 2024. URLhttps://arxiv.org/abs/2308.10144.
+Yuxiang Zheng, Dayuan Fu, Xiangkun Hu, Xiaojie Cai, Lyumanshan Ye, Pengrui Lu, and Pengfei
+Liu. Deepresearcher: Scaling deep research via reinforcement learning in real-world environ-
+ments, 2025. URLhttps://arxiv.org/abs/2504.03160.
+Zijian Zhou, Ao Qu, Zhaoxuan Wu, Sunghwan Kim, Alok Prakash, Daniela Rus, Jinhua Zhao,
+Bryan Kian Hsiang Low, and Paul Pu Liang. Mem1: Learning to synergize memory and reasoning
+for efficient long-horizon agents, 2025. URLhttps://arxiv.org/abs/2506.15841.
+A EXPERIMENTALSETUPDETAILS
+A.1MULTI-TURN TOOL-INTERGRATEDQA
+When tackling QA benchmarks, we observe that incorporating external knowledge retrieval plays
+a crucial role in enhancing answer accuracy. To this end, we utilize the 2018 Wikipedia dump as
+our external knowledge base and adopt the E5 retriever for efficient document retrieval. Within our
+framework, the entire retrieval process is encapsulated as a modular MCP tool, which the LLM can
+invoke autonomously based on its reasoning needs.
+Specifically, the Qwen3 model follows a structured interaction protocol in which reasoning and
+planning are carried out between<think>and</think>tags,tool invocation commands are
+embedded within<tool call>and</tool call>, and the corresponding outputs are captured
+between<tool response>and</tool response>. The model engages in multiple rounds
+of tool interaction until it either generates a final answer enclosed in<answer></answer>or
+reaches the maximum limit of tool invocations, which is set to six in our experiments. A concrete
+case study is presented in the following table to illustrate how this structured retrieval mechanism
+enables the model to access external knowledge and perform informed reasoning.
+The table E.1presents a representative prompt designed to encourage tool usage, along with a con-
+crete case study A.1demonstrating how the model leverages structured tool interactions to retrieve
+external knowledge and perform reasoning.
+A.2 EXPERIMENTALSETTINGS
+Direct Inference Baselines.We compare our method against the following direct inference base-
+lines:Direct Inference + Chain-of-Thought (CoT)(Wei et al., 2022) performs reasoning solely
+through its internal chain of thought.TIR (Tool-Integrated Reasoning)(Chai et al., 2025) en-
+hances inference by retrieving documents using integrated search tools. ForReasoning with Mem-
+ory, we compare with three variants: (1)Direct Trajectory, which uses past trajectories directly
+12
+
+===== PAGE 13 =====
+From Experience to Strategy: Empowering LLM Agents with Trainable Graph Memory
+Case 1: Example Response with Tool-Integrated Reasoninghalign title
+response:<think>Okay, let’s tackle this question. The user is asking which U.S. state was
+historically dominated by the Republican party from 1860 to 1932 and is represented by
+State Senator George D. Maziarz.
+First, I need to figure out the state in question. The key points here are the time period
+(1860-1932) and the Republican dominance. I remember that during the 19th century, the
+Republican Party was a major political force, especially after the Civil War. States like Ohio,
+New York, and Pennsylvania were known for their Republican strongholds. However, I’m
+not entirely sure which one fits the specific time frame mentioned.
+Next, the mention of State Senator George D. Maziarz. I need to check if this senator is from
+a state that fits the historical Republican dominance. But I don’t recall specific information
+about George D. Maziarz. Maybe I should look up his state of origin. However, since I can’t
+access external resources right now, I need to rely on my existing knowledge.
+...</think>
+<tool_call>
+{"name": "search-query_rag",
+"arguments": {"query": "George D. Maziarz state", "topk": 3}}
+</tool_call>}
+<tool response>Execute the tool search-query rag successed - The args are: ’query’:
+’George D. Maziarz state’, ’topk’: 3 - The result is:......</tool response>
+<answer>New York</answer>
+as memory; (2)A-MEM(Xu et al., 2025), which maintains a dynamic memory graph; and (3)
+Expel(Zhao et al., 2024), which extracts high-level strategic insights from past experiences.
+Reinforcement Learning Baselines.For RL training, we evaluate two groups of baselines:Search-
+R1:(Jin et al., 2025) A reinforcement learning agent that relies solely on multi-turn tool invocation
+without any memory support.RL with Memory Variants:We examine the performance of agents
+equipped with the three memory types described above—Direct Trajectory, A-MEM, and Expel
+Memory—to assess how different memory designs impact training efficiency and overall perfor-
+mance.
+We conduct experiments with two model scales,Qwen-3-4BandQwen-3-8B. For the retrieval
+component, we adopt the 2018 Wikipedia dump (Karpukhin et al., 2020) as the knowledge source
+and employ theE5(Wang et al., 2024) retriever.
+We exclusively use theHotpotQAdataset, both for model optimization and for constructing mem-
+ory during the memory formation process. Evaluation is then carried out on the test or validation
+sets of seven diverse datasets, enabling assessment of performance both within the training domain
+and in out-of-domain settings. We reportExact Match (EM)as the primary evaluation metric. And
+for memory construction in A-Mem (Xu et al., 2025), Expel (Zhao et al., 2024), and our proposed
+method, where a high-capability large language model is required, we utilized GPT-4o.
+We conduct experiments on seven datasets, where HotpotQA is selected as the in-domain test set,
+while the remaining six datasets are used for out-of-domain evaluation. From the HotpotQA training
+set, we sample 1,000 examples to construct the memory and an additional 5,000 examples for weight
+training.
+During the RL training phase, we use the rest of the HotpotQA training set as the training corpus.
+We adopt a batch size of 512 with a micro batch size of 64, and the rollout sampling is performed
+with a temperature of 1.0. To accelerate the rollout process of the LLM, we deploy vLLM v1 with a
+tensor parallel size of 1.
+Specifically for the GRPO algorithm, the number of rollout samples (n) is set to 8. All experiments
+are conducted on a cluster of 8 NVIDIA A100 GPUs.
+13
+
+===== PAGE 14 =====
+From Experience to Strategy: Empowering LLM Agents with Trainable Graph Memory
+B MEMORYGRAPHCONSTRUCTION
+The pseudo-code for the overall process of the graph, which is composed of the specific paths of
+LLM models, is as shown in the algorithm 1;
+B.1 THE CONSTRUCTION OFPATH INFINITESTATEMACHINE
+First, to formalize the agent’s decision-making process during tool invocation, we construct a Finite
+State Machine , the overall architecture of which is depicted in Figure 5. The states within this FSM
+are designed to encapsulate the critical cognitive junctures an LLM agent encounters, representing
+a synthesis of its internal knowledge and available external information. This design serves as a
+generalized abstraction of the agent’s decision pathway, ensuring high generalizability across diverse
+tasks.
+We first have a Qwen3 series model produce a concrete answer to the query. Subsequently, to
+map an agent’s raw execution trajectory—the specific sequence of reasoning and tool calls—onto a
+canonical path within the FSM, we leverage a powerful large language model, see Table E.2 for the
+full prompt and the table B.1presents a specific case of Finite State Machine.
+Case 2: A example of Finite State Machine
+Illustrative Decision Path.The following sequence illustrates a canonical decision path
+encoded within our framework:
+Start→CorrectGoalEstablished→KnowledgeUncertainGap
+→StrategyPlanning→SequentialDependentPlanning
+→ToolExecution→InformationAnalysis
+→KnowledgeAligned→DecisionMaking
+→InsufficientInformation→AssumptionBasedReasoning
+→AnswerGeneration→WrongAnswer
+→DiagnosisHub→InternalKnowledgeConflict→End
+This path represents a chain of cognitive states traversed by the agent. It begins with goal
+establishment, proceeds through planning and execution, encounters a knowledge gap lead-
+ing to flawed reasoning, and concludes with self-diagnosis. By encoding such trajectories as
+nodes in the transition path layer, the graph provides a structured and abstract representation
+of a complex reasoning process, which can be analyzed, compared, and learned from.
+B.2 META-COGNITIONCONSTRUCTION
+The detailed descriptions of each type of node in the memory are as follows:
+•Query LayerQ: Each nodeq i∈Qrepresents a specific task instance, such as a user-
+issued query. It encapsulates the entirety of an interaction, including the initial input, the
+agent’s generated output, the complete execution trajectory, and a resultant outcome label
+(e.g., success or failure).
+•Transition Path LayerT: Each nodet j ∈ Tcorresponds to a standardized decision-
+making pathway. These pathways are grounded in a predefined finite state machine (FSM)
+S, representing a canonical sequence of the agent’s states and actions. This layer abstracts
+away instance-specific details to reveal underlying behavioral patterns.
+•Meta-Cognition LayerM: Each nodem k∈Mencodes a high-level, human-readable
+strategic principle. These principles are distilled from a comparative analysis of success-
+ful and failed transition paths, representing generalized heuristics for effective problem-
+solving.
+The induction of meta-cognitions is accomplished through three primary analytical scenarios, each
+facilitated by a dedicated prompt:
+14
+
+===== PAGE 15 =====
+From Experience to Strategy: Empowering LLM Agents with Trainable Graph Memory
+Algorithm 1Hierarchical Memory Graph Construction and Update
+1:Input:Memory GraphG, new queryq i, policyπ, FSMS, sample countN, similarity threshold
+K.
+2:Ensure:Updated Memory GraphG ′.
+3:procedureUPDATEMEMORYGRAPH(G,q i,π,S,N,K)
+4:T s←∅,T f←∅▷Initialize sets for successful and failed paths
+5:G←AddNode(G,q i)▷Add current query to the graph
+6:forn= 1toNdo▷Sample N trajectories from the policy
+7:τ n←SampleRollout(π,q i)
+8:t n←GroundTrajectoryToPath(τn,S)▷Map trajectory to a canonical FSM path
+9:G←AddNode(G,t n)
+10:G←AddEdge(G,q i,tn)
+11:ifIsSuccess(τ n)then
+12:T s←T s∪{tn}
+13:else
+14:T f←T f∪{tn}
+15:end if
+16:end for
+17:M new←InduceMetaCognition(q i,Ts,Tf,G,K)▷Derive new strategic principles
+18:for eachnew meta-cognitionminM new do
+19:m exist←FindMatchingMetaCognition(m,G)
+20:ifm exist isnull then
+21:m final←CreateNewMetaCognitionNode(m)
+22:G←AddNode(G,m final)
+23:else
+24:UpdateConfidence(m exist)
+25:m final←m exist
+26:end if
+27:for eachpathtthat generatedmdo▷Link paths to the principles they support
+28:G←AddEdge(G,t,m final)
+29:end for
+30:end for
+31:returnG
+32:end procedure
+33:procedureINDUCEMETACOGNITION(q i,Ts,Tf,G,K)
+34:ifT s̸=∅andT f̸=∅then▷Case 1:High-confidence induction
+35:t s←SelectOne(T s),tf←SelectOne(T f)
+36:m←ContrastPaths(t s,tf)▷e.g., find first diverging decision
+37:return{m}
+38:else ifT s =∅andT f̸=∅then▷Case 2:Speculative induction
+39:M spec←∅
+40:Q sim←FindSimilarQueries(q i,G,K)▷Based on embedding similarity
+41:for eachsimilar queryq j inQsim do
+42:for eachsuccessful patht j ofqj do
+43:M spec←M spec∪GetMetaCognitionsFromPath(tj,G)
+44:end for
+45:end for
+46:returnM spec
+47:else
+48:return∅▷No new insights if only successes or no rollouts
+49:end if
+50:end procedure
+15
+
+===== PAGE 16 =====
+From Experience to Strategy: Empowering LLM Agents with Trainable Graph Memory
+Failure Cause Diagnosis
+(Post-Mortem Analysis)
+Refinement Strategy
+Decision Strategy
+Information Analysis &
+Internal Reasoning
+Planning Strategy
+Cognitive Assessment
+Unsupported markdown: list
+Clear IntentAmbiguous/Misunderstood
+Requires tool execution
+strategy
+Simple Direct StrategyParallel Tool ExecutionMultiple ConstraintsMulti-step Dependent Task
+Directly provide answerDirectly provide answer Directly provide answerDirectly provide answer
+All successfulPartially successful
+Tool execution failed External info aligns with
+internal knowledge
+No relevant internal
+knowledge / full reliance
+on tools
+External info conflicts with
+internal knowledge!
+Overthinking, exceeds
+token limit
+Correct Answer
+Incorrect Answer
+Formulate an explainable
+answer
+Requires further validation
+Unable to provide a
+relevant answerMissing tool information Initial plan was suboptimal Overthinking, token limit
+exceeded
+Diagnose root cause of
+failure
+Incorrectly parsed query
+semantics
+Ineffective query plan for
+information retrievalUnreliable internal memoryFabricated factsError in merging different
+but related information
+Correct reasoning, but
+incorrect answer expression
+Start
+KnowledgeSufficient
+KnowledgeUncertain/Gap
+StrategyPlanning
+ToolExecution
+AssumptionBasedReasoning
+InformationAnalysis
+DecisionMaking
+AnswerGeneration
+Refinement
+ContradictoryInformation
+InsufficientInformation
+ToolExecutionFailed
+ExternalToolInterruption
+ExecutionTimeout
+ParameterError
+FormatError
+Success
+Failure
+End
+CorrectGoalEstablished
+AmbiguousIntent
+SingleEntityDirectStrategy
+ParallelStrategy
+HolisticStrategyForMultipleConstraints
+SequentialDependentPlanning
+NoEffectiveDecision
+KnowledgeAligned
+KnowledgeGap
+InternalConflict
+SufficientInformation
+Re-executeTool
+ Re-planProblem
+DiagnosisHub
+IntentMisunderstanding
+InadequatePlanning
+InternalKnowledgeConflict
+HallucinationOnConflict
+IncorrectInformationSynthesis
+ IncorrectAnswerExpression
+Figure 5: Finite State Machine
+16
+
+===== PAGE 17 =====
+From Experience to Strategy: Empowering LLM Agents with Trainable Graph Memory
+Intra-Query Analysis: This involves comparing successful and failed trajectories that originate from
+the identical query to distill a high-confidence causal principle. The prompt for this process is
+presented in E.3.
+Inter-Query Analysis: This contrasts a failed trajectory with successful ones from semantically sim-
+ilar but distinct queries to generate speculative heuristics.
+Positive Example Distillation: This process extracts generalizable strategies exclusively from a col-
+lection of successful execution paths.
+C EXPERIMENT ANALYSIS
+C.1THE NUMBER OF THE META-COGNITION
+To better understand how the quantity of retrieved meta-cognitive strategies affects agent perfor-
+mance, we evaluate four configurations: using 0 (no memory, denoted as ITR), 1, 3, and 5 strategies
+as contextual input. Results across seven QA benchmarks are presented in Table 3.
+We observe that introducing even a single meta-cognitive strategy leads to a notable improvement
+over the baseline (ITR), especially on multi-hop tasks such as Bamboogle (+11.6%) and HotpotQA
+(+2.9%). This suggests that explicit strategic signals can substantially aid reasoning even in limited
+quantities. As the number of strategies increases, performance generally improves, but the marginal
+gains become smaller—likely due to redundancy or prompt saturation. The best overall result is
+achieved attop k=5, which balances diversity and relevance.
+These findings imply that a moderate number of well-curated strategies can enhance generaliza-
+tion and decision quality, without incurring the risks of prompt overload or noise from irrelevant
+memories.
+Table 3: Performance of different numbers of meta-cognition.
+Methods General QA Multi-Hop QA Avg.NQ⋆ TriviaQA⋆ PopQA⋆ HotpotQA† 2wiki⋆ Musique⋆ Bamboogle⋆
+Qwen3-4B
+ITR 0.298 0.581 0.157 0.268 0.281 0.077 0.290 0.279
+topk = 1 0.326 0.583 0.382 0.290 0.327 0.096 0.406 0.344
+topk = 3 0.335 0.596 0.393 0.299 0.347 0.099 0.391 0.351
+topk = 5 0.333 0.594 0.392 0.299 0.349 0.094 0.418 0.355
+C.2 CROSS-API MEMORYROBUSTNESS
+To further validate the portability and reliability of our structured memory graph, we construct the
+memory using two distinct LLM APIs:gpt-4oandGemini-2.5-pro. These memory graphs
+are then integrated into the same downstream agent architecture (Qwen3-4B and Qwen3-8B), and
+evaluated across seven QA datasets. As shown in Table 4, the resulting performance differences are
+minor, with Gemini-based memory slightly outperforming its 4o counterpart in most cases.
+Specifically, on the multi-hop benchmark Bamboogle, the Gemini-constructed memory shows a no-
+table increase (e.g., +0.043 on Qwen3-8B), while maintaining parity or marginal gains in general
+QA datasets like TriviaQA and PopQA. These results indicate that while different APIs may in-
+troduce slight variations in strategy abstraction, our framework is robust to such differences and
+maintains high effectiveness regardless of the underlying model used to generate the memory.
+D CASESTUDIES
+This case Dillustrates how the integration of meta-cognitive strategies enhances factual precision.
+Without meta-cognition, the agent returns a partially correct but under-specified answer (”National
+Security Law”). With meta-cognition, the agent engages in structured validation and corrects the
+response to the fully grounded and jurisdiction-specific ”Macau National Security Law”, aligning
+17
+
+===== PAGE 18 =====
+From Experience to Strategy: Empowering LLM Agents with Trainable Graph Memory
+Algorithm 2Trainable Graph Weight Optimization via Policy Gradient
+1:Input:Memory GraphGwith initial weightsw, Training QueriesD, Agent model, Reward
+functionR, learning rateα.
+2:Output:Optimized Memory GraphGwith updated weightsw ∗.
+3:procedureOPTIMIZEGRAPHWEIGHTS(G,D,α)
+4:for eachqueryq new inDdo
+5:▷— Step 1: Stochastic Guidance Selection —
+6:m k,p(mk|q new)←SelectGuidingMetaCognition(G,q new)
+7:ifm k isnull then▷No relevant guidance found
+8:continue
+9:end if
+10:▷— Step 2: Counterfactual Evaluation —
+11:Response with←Agent.generate(q new,guidance=m k)
+12:R with←R(Response with,q new)
+13:Response w/o←Agent.generate(q new,guidance=null)
+14:R w/o←R(Response w/o,q new)
+15:∆R k←R with−R w/o ▷Calculate reward gap (utility signal)
+16:▷— Step 3: Policy Gradient Update —
+17:∇ wL←−∆R k·∇ w logp(mk|q new)▷Compute gradient for REINFORCE
+18:w←w−α·∇ wL▷Update all contributing weights
+19:end for
+20:returnG
+21:end procedure
+22:procedureSELECTGUIDINGMETACOGNITION(G,q new)
+23:▷Activate relevant subgraph based on semantic similarity
+24:M act←ActivateSubgraph(q new,G)
+25:ifM act is emptythen
+26:return null, 0
+27:end if
+28:▷Compute relevance scores for all activated meta-cognitions
+29:for allm∈M act do
+30:S(m|q new)←0
+31:for allpathq i→t j→minGdo
+32:ifq i is in activated subgraphthen
+33:S(m|q new)←S(m|q new) +Sim(q new,qi)·w (i,j)
+qt ·w (j,m)
+tm
+34:end if
+35:end for
+36:end for
+37:▷Compute selection probabilities using softmax
+38:Z← P
+m′∈Mact exp(S(m′|q new))
+39:for allm∈M act do
+40:p(m|q new)←exp(S(m|q new))/Z
+41:end for
+42:▷Stochastically sample a meta-cognition based on probabilities
+43:m k←Sample(M act,probabilities={p(m|q new)})
+44:returnm k,p(mk|q new)
+45:end procedure
+18
+
+===== PAGE 19 =====
+From Experience to Strategy: Empowering LLM Agents with Trainable Graph Memory
+Table 4: Performance comparison across LLM .
+Methods General QA Multi-Hop QA Avg.NQ⋆ TriviaQA⋆ PopQA⋆ HotpotQA† 2wiki⋆ Musique⋆ Bamboogle⋆
+Qwen3-8B
+Ours(4o) 0.316 0.622 0.382 0.358 0.354 0.128 0.392 0.365
+Ours(gemini) 0.318 0.621 0.385 0.362 0.336 0.123 0.434 0.369
+Qwen3-4B
+Ours(4o) 0.335 0.596 0.393 0.299 0.347 0.099 0.391 0.351
+Ours(gemini) 0.337 0.598 0.396 0.314 0.360 0.093 0.397 0.357
+exactly with the ground truth. This aligns with our design goal: equipping agents with self-checking
+mechanisms that reduce synthesis ambiguity, particularly when internal confidence is high but error
+risk remains.
+Case 3: Correcting Answer via Meta-Cognition
+Query:Hong Kong Macau cultural exchange was a trip that tested which law whose purpose
+was to fulfil Article 23 of the Macau Basic Law?
+Ground Truth:Macau National Security Law
+Meta-Cognition:Early recognition and affirmation of the ’KnowledgeSufficient’ state can
+help prevent synthesis inaccuracies in scenarios where internal confidence is prone to chal-
+lenges. Structured validation strategies ensure precise answer formulation when internal
+knowledge seems sufficient but risks synthesis errors.
+Response (w/o meta-cognition):
+... Therefore, the answer should state that the law tested was the National
+Security Law, aimed at fulfilling Article 23.→Final Answer:National
+Security Law
+Response (with meta-cognition):
+... That law is likely the Macau National Security Law, which was enacted
+in 2009... The answer should be the Macau National Security Law.→
+Final Answer:Macau National Security Law
+EPROMPT TEMPLATES
+E.1MULTI-TURN TOOL-INTERGRATEDQAPROMPT
+When LLMs needs to interact with tools multiple times to answer a question, it is necessary to guide
+the LLM on which tools to use and how to use them. The specific prompt is as follows.
+E.2CONSTRUCTING FSM PATH
+Given the specific response path of the LLM and the complete structure of the state machine, we
+employ an LLM (e.g., GPT-4o) to map the generated answer onto one of the predefined paths in the
+state machine. The following shows the exact prompt used.
+E.3META-COGNITION CONSTRUCTING
+With both successful and failed state-machine paths available, we derive high-level meta-cognitions
+by contrasting the two. The following prompt illustrates how a pair of successful and failed paths
+under the same query is used to induce meta-cognition.
+19
+
+===== PAGE 20 =====
+From Experience to Strategy: Empowering LLM Agents with Trainable Graph Memory
+Prompt A: System and User Prompt
+SYSTEM PROMPT:
+# Tools
+You may call one or more functions to assist with the user query.
+You are provided with function signatures within <tools></tools> XML
+tags:
+<tools>
+{
+"name": "search-query_rag",
+"description": "MCP RAG Query Tool (Synchronous Version)
+Args:
+query: query text
+topk: The default number of documents returned is 3
+Returns:
+str: The formatted query result",
+"parameters": {
+"type": "object",
+"properties": {
+"query": {"title": "Query", "type": "string"},
+"topk": {"default": 3, "title": "Topk", "type": "integer"}
+},
+"required": ["query"]
+}
+}
+</tools>
+# Tool call format
+For each function call, return a JSON object with function name and
+arguments within <tool_call></tool_call> XML tags:
+<tool_call>
+{
+"name": <function-name>,
+"arguments": <args-json-object>
+}
+</tool_call>
+USER PROMPT:
+Answer the given question. After reasoning, if you find you lack
+some knowledge, you can call the search tool.
+You may search as many times as you want.
+If you find no further external knowledge is needed, you can
+directly provide the answer inside <answer> and </answer>,
+without detailed illustrations.
+For example: <answer> Beijing </answer>.
+Question: Which US State, historically dominated by the Republican
+party from 1860 to 1932, is represented by State Senator George
+D. Maziarz?
+20
+
+===== PAGE 21 =====
+From Experience to Strategy: Empowering LLM Agents with Trainable Graph Memory
+Prompt B: Prompt for constructing FSM path
+Instruction:You are a metacognition analysis expert specialized in extractinggeneralized
+decision principles and guidance strategiesfrom state machine execution paths.
+State machine transition rules:{transitions info}
+Core Requirements:
+1.Generalizability Focus: Output strategies and principles must be general, applicable
+to similar problems, without specific query details.
+2.Direct Usability: Generated content should be directly usable as guidance principles
+for new problems.
+3.Principled Expression: Use cautious guidance terms like “consider”, “may help”,
+“tends to” rather than definitive statements.
+4.Concise Effectiveness: Output only the most core insights, avoid redundancy and com-
+plexity.
+5.Quality Control: Strictly evaluate whether there is sufficient evidence to support new
+metacognition.
+6.Knowledge Confidence Awareness: Recognize that LLM’s internal knowledge confi-
+dence varies across queries — success patterns may be domain-specific.
+7.Uncertainty Acknowledgment: Express appropriate uncertainty in guidance princi-
+ples, avoiding overly definitive conclusions.
+8.Quantity Management: When metacognition count exceeds 30, prioritize updating
+low-confidence existing metacognitions.
+Output Format (Quantity-Aware):
+Your output must be a JSON object with the following structure:
+{
+"decision": "update" or "create" or "skip",
+"target_meta_id": <ID of metacognition to update (only when
+decision is "update")>,
+"reasoning": "Brief explanation including quantity management when
+count > 30.",
+"meta_cognition": {
+"summary": "Concise general guidance summary (use cautious
+language).",
+"strategy_principles": [
+{
+"principle": "...",
+"confidence": "high" | "medium" | "low",
+"confidence_score": 30 - 85
+},
+...
+],
+"overall_confidence": "high" | "medium" | "low",
+"evidence_paths": <int>,
+"uncertainty_note": "Brief acknowledgment of limitations or
+knowledge-dependency concerns."
+}
+}
+21
+
+===== PAGE 22 =====
+From Experience to Strategy: Empowering LLM Agents with Trainable Graph Memory
+Prompt C: Metacognition Prompt Specification
+State machine transition rules:{transitions info}
+Core Requirements:
+1.Generalizability Focus:Output strategies and principles must be general, applicable
+to similar problems, without specific query details.
+2.Direct Usability:Generated content should be directly usable as guidance principles
+for new problems.
+3.Principled Expression:Use cautious guidance terms like “consider”, “may help”,
+“tends to” rather than definitive statements.
+4.Concise Effectiveness:Output only the most core insights, avoid redundancy and com-
+plexity.
+5.Quality Control:Strictly evaluate whether there is sufficient evidence to support new
+metacognition.
+6.Knowledge Confidence Awareness: Recognize that LLM’s internal knowledge con-
+fidence varies across queries—success patterns may be domain-specific.
+7.Uncertainty Acknowledgment: Express appropriate uncertainty in guidance prin-
+ciples, avoiding overly definitive conclusions.
+8.Quantity Management:When metacognition count exceeds 30, prioritize updating
+low-confidence existing metacognitions.
+Critical Self-Reflection Requirements:
+•Pattern Validity:Question whether identified patterns truly represent generalizable
+principles.
+•Knowledge Dependency: Consider if success stems from strategy effectiveness or
+the LLM’s domain familiarity.
+•Evidence Sufficiency:Demand higher evidence standards for strategies that could mis-
+lead future queries.
+•Simplicity Over Complexity:Favor simple, robust principles over complex, brittle
+ones.
+Metacognition Quantity Control Strategy:
+When metacognition count≤30:• Normal decision making: create, update, or skip
+based on evidence quality.
+• Prefer creating new metacognition when patterns are sufficiently distinct.
+•Express appropriate uncertainty in new metacognitions.
+When metacognition count>30:•Strongly prefer UPDATE over CREATE: Prior-
+itize improving existing low-confidence metacognitions.
+• Only create new metacognition if the pattern is exceptionally valuable and com-
+pletely distinct.
+• Target metacognitions with confidence levels “low” or “medium” for updates.
+Analysis Focus:
+1.Success Pattern Identification:Abstract reusable decision patterns from successful
+paths.
+2.Failure Cause Summary:Identify generalizable errors to avoid from failed paths.
+3.State Transition Optimization:Extract best practice principles for state machine exe-
+cution.
+4.Knowledge Dependency Assessment: Evaluate whether patterns might be specific
+to certain knowledge domains.
+22
+
+===== PAGE 23 =====
+From Experience to Strategy: Empowering LLM Agents with Trainable Graph Memory
+5.Existing Knowledge Enhancement:When quantity is high, focus on strengthening
+weak metacognitions.
+Decision Options:
+•create:Create new metacognition (when discovering valuable and distinct patterns, or
+when quantity≤30).
+•update:Update existing metacognition (preferred when quantity>30, especially tar-
+geting low-confidence ones).
+•skip:Skip metacognition operation (when evidence is insufficient or has no new value).
+Skip Metacognition Situations:
+• Path data quality is poor, patterns are unclear.
+• Existing metacognition already covers the pattern, new evidence shows no significant
+improvement.
+• Success/failure path differences are not obvious, difficult to extract effective strategies.
+•Cannot distinguish whether success stems from strategy effectiveness or knowl-
+edge domain familiarity.
+• When quantity>30 and no suitable low-confidence metacognition found for update.
+Output Format (Quantity-Aware):Your output must be a JSON object containing:
+{
+"decision": "update" or "create" or "skip",
+"target_meta_id": (when decision is update) ID of metacognition to
+update,
+"reasoning": "Brief decision analysis, must include quantity
+management when count > 30.",
+"meta_cognition": {
+"summary": "...",
+"strategy_principles": [
+{"principle": "...", "confidence": "high", "confidence_score":
+80},
+{"principle": "...", "confidence": "medium", "confidence_score
+": 60}
+],
+"overall_confidence": "medium",
+"evidence_paths": 7,
+"uncertainty_note": "..."
+}
+}
+23
